@@ -14,6 +14,8 @@
 
 # Environment files
 /.env
+env.ts
+env/*.ts
 
 # Angular CLI and build artefacts
 /.angular-cli.json
@@ -26,3 +28,6 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+queueboard/src/typings/angular-material.d.ts
+queueboard/src/env/environment.prod.ts
+queueboard/src/env/environment.ts

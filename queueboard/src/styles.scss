@@ -1,0 +1,24 @@
+/* Global styles and Bootstrap import (using node_modules relative path) */
+@import '../node_modules/bootstrap/dist/css/bootstrap.min.css';
+
+/* You can add global styles to this file, and also import other style files */
+::-webkit-scrollbar {
+    height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+body {
+    overflow-x: auto;
+}
+
+/* Previously used MDC (Material Components Web); removed in favor of Bootstrap. */
+
+/* Legacy Angular Material rules removed after migrating to Bootstrap. */

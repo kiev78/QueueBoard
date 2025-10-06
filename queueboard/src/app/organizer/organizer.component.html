@@ -1,0 +1,78 @@
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+  <div class="container-fluid">
+    <span class="navbar-brand">QueueBoard — Organizer</span>
+    <div class="ms-auto d-flex gap-2 align-items-center">
+      <button class="btn btn-outline-light" (click)="connectYouTube()" [disabled]="connecting()">
+        <span *ngIf="!connecting()" class="me-1">☁️</span>
+        <span *ngIf="connecting()" class="me-1">⏳</span>
+        Connect YouTube
+      </button>
+      <button class="btn btn-light text-danger" *ngIf="!connecting()" (click)="youtube.signOut(); playlists.set([]);">Sign Out</button>
+    </div>
+  </div>
+</nav>
+
+<div class="organizer-root">
+  <div *ngIf="error()" class="error">Error: {{ error() }}</div>
+  <div class="controls">
+    <input placeholder="Search videos, tags or playlists" [(ngModel)]="search"
+           (focus)="onSearchFocus()" (click)="onSearchFocus()" />
+  </div>
+
+    <div class="board" cdkDropListOrientation="horizontal" cdkDropListGroup (cdkDropListDropped)="dropPlaylist($event)" cdkDropList [cdkDropListData]="filteredPlaylists()">
+      <div class="column" *ngFor="let playlist of filteredPlaylists(); trackBy: trackById" [style.borderTopColor]="playlist.color">
+      <div class="card playlist-card" cdkDrag>
+        <div class="card-header">
+          <div class="fw-bold">{{ playlist.title }}</div>
+          <div class="text-muted small">{{ playlist.videos.length }} videos</div>
+        </div>
+        <div class="card-body">
+          <div class="video-list" cdkDropList [cdkDropListData]="playlist.videos" (cdkDropListDropped)="drop($event, playlist.id)">
+            <div class="video-card" *ngFor="let v of playlist.videos; trackBy: trackById" cdkDrag>
+              <div class="video-main">
+                <img *ngIf="v.thumbnail" [src]="v.thumbnail" alt="thumb" (click)="openVideo(v)" role="button" tabindex="0" (keydown.enter)="openVideo(v)" [attr.aria-label]="'Play ' + (v.title || 'video')" />
+                <div class="meta">
+                  <div class="title">{{ v.title }}</div>
+                  <div class="duration">{{ v.duration }}</div>
+                </div>
+                <a class="open" [href]="v.youtubeUrl" target="_blank" rel="noopener" aria-label="Open in new">
+                  🔗
+                </a>
+              </div>
+
+              <div class="video-details">
+                <div class="desc">{{ v.description }}</div>
+                <div class="actions">
+                  <button class="btn btn-primary play-btn" (click)="openVideo(v)">
+                    ▶️ Play
+                  </button>
+                  
+                  <a class="open-ext" [href]="v.youtubeUrl" target="_blank" rel="noopener">Open on YouTube</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card-footer">
+          <button class="btn btn-link">Add video</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    <div *ngIf="filteredPlaylists().length === 0" class="no-results">No playlists or videos match your search.</div>
+
+    <!-- Overlay player -->
+    <div class="player-overlay" *ngIf="selectedVideo()">
+      <div class="player-backdrop" (click)="closeVideo()"></div>
+      <div class="player-card">
+        <div class="player-header">
+          <div class="player-title">{{ selectedVideo()?.title }}</div>
+          <button class="btn btn-sm btn-outline-secondary" (click)="closeVideo()">✕</button>
+        </div>
+        <div class="player-body">
+          <iframe *ngIf="embedUrl()" [src]="embedUrl()" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+        </div>
+      </div>
+    </div>
+</div>
