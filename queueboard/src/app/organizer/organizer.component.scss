@@ -20,24 +20,22 @@
   align-items: flex-start;
 }
 
+.card-body {
+  padding: 0.6rem;
+}
 
 .column {
   min-width: 300px;
   max-width: 380px;
   display: flex;
   flex-direction: column;
- 
-  padding: 0.5rem;
+  padding: 0.125rem;
   background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(250,250,250,0.98));
 }
 
 .playlist-card {
-  border-top: 6px solid transparent;
   transition: transform 180ms ease, box-shadow 180ms ease;
   background: #fafafa;
-}
-
-.playlist-card {
   border: 5px solid rgba(185, 29, 29, 0.04);
   box-shadow: 0 1px 2px rgba(10, 9, 9, 0.04);
 }
@@ -51,16 +49,18 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  min-height: 50px;
 
 /* make each column scroll vertically when content exceeds a reasonable height */
   max-height: 520px; /* approx 10 items at ~48-56px each plus padding */
   overflow-y: auto;
-  padding-right: 0.25rem;
+  padding-right: 0.1rem;
 }
 
 .video-list::-webkit-scrollbar {
   width: 10px;
 }
+
 .video-list::-webkit-scrollbar-thumb {
   background: rgba(0,0,0,0.08);
   border-radius: 6px;
@@ -70,8 +70,8 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  padding: 0.5rem;
-  background: #dad7d7;
+  padding: 0.5rem 0.25rem;
+  background: #ececec;
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.04);
   transition: box-shadow 120ms ease, transform 120ms ease;
@@ -142,8 +142,6 @@
   color: rgba(0,0,0,0.65);
 }
 
-
-
 .spacer {
   flex: 1 1 auto;
 }
@@ -154,7 +152,7 @@
   max-height: 0;
   overflow: hidden;
   transition: max-height 180ms ease, padding 180ms ease;
-  padding: 0 0.5rem;
+  padding: 0 0.25rem;
   color: #333;
   margin-top: 0.5rem;
   display: flex;
@@ -163,14 +161,14 @@
 
 .video-card:hover .video-details {
   max-height: 240px;
-  padding: 0.5rem;
+  padding: 0.25rem;
 }
 
 .video-details .desc {
   font-size: 0.9rem;
   color: #444;
   margin-bottom: 0.5rem;
-  max-height: 6.5rem;
+  max-height: 5rem;
   overflow: auto;
   flex: 1 1 auto;
 }
@@ -181,8 +179,6 @@
 }
 
 .video-details .actions {
-  display: flex;
-  gap: 0.5rem;
   align-items: center;
 }
 
@@ -190,7 +186,6 @@
 .video-details .actions {
   padding-top: 6px;
   z-index: 2;
-  background: rgba(255,255,255,0.9);
 }
 
 .video-details .actions .open-ext {
@@ -220,7 +215,7 @@
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  min-width: 72px;
+  min-width: 100px;
 }
 
 .player-overlay {
@@ -291,7 +286,7 @@
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  min-width: 72px;
+  min-width: 100px;
 }
 /* show a thin page-level hint scrollbar when content overflows horizontally */
 :host {

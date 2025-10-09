@@ -30,8 +30,8 @@
       <ng-container *ngIf="playlist.id !== 'load-more-sentinel'">
         <div class="card playlist-card" cdkDrag>
           <div class="card-header">
-            <div class="fw-bold">{{ playlist.title }}</div>
-            <div class="text-muted small">{{ playlist.videos.length }} videos</div>
+            <div class="fw-bold">{{ playlist.title }}
+            <span class="text-muted small">{{ playlist.videos.length }} videos</span></div>
           </div>
           <div class="card-body">
             <div class="video-list" cdkDropList [cdkDropListData]="playlist.videos"
@@ -55,7 +55,6 @@
                     <button class="btn btn-primary play-btn" (click)="openVideo(v)">
                       ▶️ Play
                     </button>
-                    <a class="open-ext" [href]="v.youtubeUrl" target="_blank" rel="noopener">Open on YouTube</a>
                   </div>
                 </div>
               </div>
@@ -64,9 +63,6 @@
                 <button class="btn btn-sm btn-outline-primary" (click)="loadMoreVideos(playlist)">Load More</button>
               </div>
             </div>
-          </div>
-          <div class="card-footer">
-            <button class="btn btn-link">Add video</button>
           </div>
         </div>
 
