@@ -1,0 +1,19 @@
+# This file is used by Gemini Code Assist to exclude files and directories from context.
+# It uses glob patterns. For more information, see: https://www.aiexclude.com
+
+# Exclude node_modules and build artifacts
+node_modules/
+dist/
+
+# Exclude common temporary files and directories
+.angular/
+.cache/
+
+# Exclude other version control directories
+.hg/
+.svn/
+
+# Exclude temporary or backup files created by some editors
+*~
+*.bak
+*.swp

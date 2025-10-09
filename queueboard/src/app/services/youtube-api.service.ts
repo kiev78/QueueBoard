@@ -164,39 +164,28 @@ export class YoutubeApiService {
     try { if (window?.gapi?.client) window.gapi.client.setToken(null); } catch (e) {}
   }
 
-  async fetchPlaylists(channelId?: string, maxPlaylists = 10) {
+  async fetchPlaylists(pageToken?: string, maxResults = 10) {
     if (!this.accessToken) throw new Error('Not authenticated');
-    const params: any = channelId ? { channelId } : { mine: true };
-    // fetch a reasonable window (50) then sort and slice locally
+    const params: any = { mine: true, maxResults, pageToken };
     const res = await window.gapi.client.youtube.playlists.list({
       part: 'id,snippet,contentDetails',
-      maxResults: 50,
       ...params
     });
 
-    const items = res.result.items || [];
-    // sort by snippet.publishedAt descending (recent first)
-    items.sort((a: any, b: any) => {
-      const pa = a.snippet?.publishedAt ? Date.parse(a.snippet.publishedAt) : 0;
-      const pb = b.snippet?.publishedAt ? Date.parse(b.snippet.publishedAt) : 0;
-      return pb - pa;
-    });
-
-    const limited = items.slice(0, maxPlaylists);
-    // return a result-shaped object preserving other metadata
-    return { ...res.result, items: limited };
+    return { ...res.result, items: res.result.items || [] };
   }
 
   /**
    * Fetch playlist items and then fetch video details (snippet + contentDetails)
    */
-  async fetchPlaylistItems(playlistId: string, maxResults = 10) {
+  async fetchPlaylistItems(playlistId: string, maxResults = 10, pageToken?: string) {
     if (!this.accessToken) throw new Error('Not authenticated');
 
     const listRes = await window.gapi.client.youtube.playlistItems.list({
       part: 'snippet,contentDetails',
       playlistId,
-      maxResults
+      maxResults,
+      pageToken
     });
 
     const items = listRes.result.items || [];
@@ -204,7 +193,7 @@ export class YoutubeApiService {
       .map((it: any) => it.snippet?.resourceId?.videoId)
       .filter((v: any) => !!v);
 
-    if (videoIds.length === 0) return [];
+    if (videoIds.length === 0) return { items: [], nextPageToken: listRes.result.nextPageToken };
 
     const vidsRes = await window.gapi.client.youtube.videos.list({
       part: 'snippet,contentDetails',
@@ -215,7 +204,7 @@ export class YoutubeApiService {
     const vids = vidsRes.result.items || [];
 
     // Map video details into a small DTO
-    return vids.map((v: any) => ({
+    const mappedVids = vids.map((v: any) => ({
       id: v.id,
       title: v.snippet?.title,
       description: v.snippet?.description,
@@ -226,6 +215,8 @@ export class YoutubeApiService {
       publishedAt: v.snippet?.publishedAt,
       youtubeUrl: `https://youtube.com/watch?v=${v.id}`
     }));
+
+    return { items: mappedVids, nextPageToken: listRes.result.nextPageToken };
   }
 
   // Small helper to convert ISO8601 duration to hh:mm:ss or mm:ss

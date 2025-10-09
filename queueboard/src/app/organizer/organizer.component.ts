@@ -1,5 +1,5 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, signal, computed, inject, PLATFORM_ID } from '@angular/core';
+import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { CdkDragDrop, moveItemInArray, transferArrayItem, DragDropModule } from '@angular/cdk/drag-drop';
 import { FormsModule } from '@angular/forms';
@@ -24,6 +24,7 @@ interface PlaylistColumn {
   description?: string;
   color?: string;
   videos: VideoCard[];
+  nextPageToken?: string;
 }
 
 @Component({
@@ -40,11 +41,11 @@ export class OrganizerComponent implements OnInit {
   preloading = signal(false);
   filteredPlaylists = computed(() => {
     const q = (this.search() || '').trim().toLowerCase();
-    if (!q) return this.playlists();
+    let filtered = this.playlists();
 
-    const matchText = (text?: string) => (text || '').toLowerCase().includes(q);
-
-    return this.playlists()
+    if (q) {
+      const matchText = (text?: string) => (text || '').toLowerCase().includes(q);
+      filtered = this.playlists()
       .map((pl) => {
         // filter videos inside playlist
         const videos = (pl.videos || []).filter((v) => {
@@ -68,15 +69,25 @@ export class OrganizerComponent implements OnInit {
 
         return null;
       })
-      .filter((x) => x !== null) as PlaylistColumn[];
+      .filter((x): x is PlaylistColumn => x !== null);
+    }
+
+    if (this.nextPageToken) {
+      return [...filtered, { id: 'load-more-sentinel', title: 'Next', videos: [] }];
+    }
+    return filtered;
   });
   connecting = signal(false);
   error = signal<string | null>(null);
+  loadingMore = signal(false);
 
   selectedVideo = signal<VideoCard | null>(null);
   embedUrl = signal<SafeResourceUrl | null>(null);
 
-  constructor(public youtube: YoutubeApiService, private sanitizer: DomSanitizer) {}
+  private sanitizer = inject(DomSanitizer);
+  private nextPageToken: string | null | undefined = undefined;
+
+  constructor(public youtube: YoutubeApiService) {}
 
   // Called when the search input is focused/clicked. Start preloading videos
   // from all playlists (first time only) so the search can match video content.
@@ -94,8 +105,8 @@ export class OrganizerComponent implements OnInit {
     for (const pl of pls) {
       try {
         if (pl.videos && pl.videos.length > 0) continue;
-        const res = await this.youtube.fetchPlaylistItems(pl.id, limit);
-        const items = (res && (res.items || res)) || [];
+        const { items, nextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, limit);
+
         const mapped: VideoCard[] = (items as any[]).map((v: any) => ({
           id: v.id || v.videoId || v.snippet?.resourceId?.videoId || '',
           title: v.snippet?.title || v.title || '',
@@ -111,7 +122,7 @@ export class OrganizerComponent implements OnInit {
         const curr = [...this.playlists()];
         const idx = curr.findIndex(x => x.id === pl.id);
         if (idx >= 0) {
-          curr[idx] = { ...curr[idx], videos: mapped };
+          curr[idx] = { ...curr[idx], videos: mapped, nextPageToken };
           this.playlists.set(curr);
         }
       } catch (e) {
@@ -164,8 +175,9 @@ export class OrganizerComponent implements OnInit {
       }
 
       // Fetch playlists and merge with stored state
-      const merged = await this.fetchAndMergePlaylists();
-      this.playlists.set(merged);
+      const { playlists, nextPageToken } = await this.fetchAndMergePlaylists(undefined, 10);
+      this.playlists.set(playlists);
+      this.nextPageToken = nextPageToken;
 
       // For each playlist, fetch items and populate videos (only if empty)
       for (const pl of this.playlists()) {
@@ -174,8 +186,7 @@ export class OrganizerComponent implements OnInit {
             continue; // preserve stored videos
           }
 
-          const res = await this.youtube.fetchPlaylistItems(pl.id, 10);
-          const items = (res && (res.items || res)) || [];
+          const { items, nextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, 10);
 
           const mapped: VideoCard[] = (items as any[]).map((v: any) => ({
             id: v.id || v.videoId || v.snippet?.resourceId?.videoId || '',
@@ -193,7 +204,7 @@ export class OrganizerComponent implements OnInit {
           const curr = [...this.playlists()];
           const idx = curr.findIndex(x => x.id === pl.id);
           if (idx >= 0) {
-            curr[idx] = { ...curr[idx], videos: mapped };
+            curr[idx] = { ...curr[idx], videos: mapped, nextPageToken };
             this.playlists.set(curr);
           }
         } catch (e) {
@@ -210,6 +221,89 @@ export class OrganizerComponent implements OnInit {
       this.connecting.set(false);
     }
   }
+
+  async fetchMorePlaylists() {
+    if (this.loadingMore() || !this.nextPageToken) {
+      return;
+    }
+
+    this.loadingMore.set(true);
+    try {
+      const { playlists: newPlaylists, nextPageToken } = await this.fetchAndMergePlaylists(this.nextPageToken, 10);
+      this.playlists.update(current => [...current, ...newPlaylists]);
+      this.nextPageToken = nextPageToken;
+
+      // Now fetch videos for the new playlists
+      for (const pl of newPlaylists) {
+        try {
+          const { items, nextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, 10);
+
+          const mapped: VideoCard[] = (items as any[]).map((v: any) => ({
+            id: v.id || v.videoId || v.snippet?.resourceId?.videoId || '',
+            title: v.snippet?.title || v.title || '',
+            description: v.snippet?.description || v.description || '',
+            duration: this.youtube.isoDurationToString(v.contentDetails?.duration || v.duration || ''),
+            thumbnail: v.snippet?.thumbnails?.default?.url || v.thumbnail || '',
+            tags: v.snippet?.tags || v.tags || [],
+            channelTitle: v.snippet?.channelTitle || v.channelTitle || '',
+            publishedAt: v.snippet?.publishedAt || v.publishedAt || '',
+            youtubeUrl: v.youtubeUrl || (v.snippet?.resourceId?.videoId ? `https://www.youtube.com/watch?v=${v.snippet.resourceId.videoId}` : '')
+          }));
+
+          // Update the specific playlist with its videos
+          this.playlists.update(current => current.map(p => p.id === pl.id ? { ...p, videos: mapped, nextPageToken } : p));
+
+        } catch (e) {
+          // ignore per-playlist errors but log
+          console.error('Failed to load playlist items for', pl.id, e);
+        }
+      }
+
+      // Save the newly added playlists and videos
+      this.saveState();
+    } catch (err: any) {
+      this.error.set(err?.message || String(err));
+      this.nextPageToken = null; // Stop trying on error
+    } finally {
+      this.loadingMore.set(false);
+    }
+  }
+
+  async loadMoreVideos(playlist: PlaylistColumn) {
+    if (!playlist.nextPageToken) return;
+
+    try {
+      const { items: newVideos, nextPageToken } = await this.youtube.fetchPlaylistItems(playlist.id, 10, playlist.nextPageToken);
+      const mapped: VideoCard[] = (newVideos as any[]).map((v: any) => ({
+        id: v.id || v.videoId || v.snippet?.resourceId?.videoId || '',
+        title: v.snippet?.title || v.title || '',
+        description: v.snippet?.description || v.description || '',
+        duration: this.youtube.isoDurationToString(v.contentDetails?.duration || v.duration || ''),
+        thumbnail: v.snippet?.thumbnails?.default?.url || v.thumbnail || '',
+        tags: v.snippet?.tags || v.tags || [],
+        channelTitle: v.snippet?.channelTitle || v.channelTitle || '',
+        publishedAt: v.snippet?.publishedAt || v.publishedAt || '',
+        youtubeUrl: v.youtubeUrl || (v.snippet?.resourceId?.videoId ? `https://www.youtube.com/watch?v=${v.snippet.resourceId.videoId}` : '')
+      }));
+
+      this.playlists.update(currentPlaylists => {
+        const plIndex = currentPlaylists.findIndex(p => p.id === playlist.id);
+        if (plIndex > -1) {
+          const updatedPlaylist = { ...currentPlaylists[plIndex] };
+          updatedPlaylist.videos = [...updatedPlaylist.videos, ...mapped];
+          updatedPlaylist.nextPageToken = nextPageToken;
+          currentPlaylists[plIndex] = updatedPlaylist;
+        }
+        return [...currentPlaylists];
+
+      });
+      
+      this.saveState();
+    } catch (e) {
+      console.error('Failed to load more videos for playlist', playlist.id, e);
+    }
+  }
+ 
 
   openVideo(v: VideoCard) {
     this.selectedVideo.set(v);
@@ -260,8 +354,8 @@ export class OrganizerComponent implements OnInit {
     }
   }
 
-  private async fetchAndMergePlaylists(): Promise<PlaylistColumn[]> {
-    const res = await this.youtube.fetchPlaylists();
+  private async fetchAndMergePlaylists(pageToken?: string, maxResults: number = 10): Promise<{ playlists: PlaylistColumn[], nextPageToken?: string }> {
+    const res = await this.youtube.fetchPlaylists(pageToken, maxResults);
     const fetched: PlaylistColumn[] = (res?.items || []).map((p: any) => ({
       id: p.id,
       title: p.snippet?.title || p.title || '',
@@ -269,6 +363,7 @@ export class OrganizerComponent implements OnInit {
       color: '#e0e0e0',
       videos: [] as VideoCard[]
     }));
+    const nextPageToken = res?.nextPageToken;
 
     // merge with saved state (preserve user order and video order)
     const stored = this.loadState();
@@ -276,6 +371,11 @@ export class OrganizerComponent implements OnInit {
     const fetchedMap = new Map(fetched.map((f: any) => [f.id, f]));
 
     if (stored && stored.length) {
+      // On subsequent page fetches, we don't merge with stored, just return the new items.
+      if (pageToken) {
+        return { playlists: fetched, nextPageToken };
+      }
+
       // Start with stored order
       merged = stored.map((s) => {
         const f = fetchedMap.get(s.id);
@@ -296,7 +396,7 @@ export class OrganizerComponent implements OnInit {
       merged = fetched;
     }
 
-    return merged;
+    return { playlists: merged, nextPageToken };
   }
 
   private loadState(): PlaylistColumn[] | null {
