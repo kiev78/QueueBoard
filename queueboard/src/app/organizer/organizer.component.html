@@ -8,6 +8,7 @@
         Connect YouTube
       </button>   
        
+      <button class="btn btn-secondary" *ngIf="hasPlaylists()" (click)="refresh()" [disabled]="connecting()">Refresh</button>
       <button class="btn btn-light text-danger" *ngIf="!connecting()"
         (click)="youtube.signOut(); playlists.set([]);">Sign Out</button>
     </div>
@@ -40,7 +41,7 @@
                   <img *ngIf="v.thumbnail" [src]="v.thumbnail" alt="thumb" (click)="openVideo(v)" role="button"
                     tabindex="0" (keydown.enter)="openVideo(v)" [attr.aria-label]="'Play ' + (v.title || 'video')" />
                   <div class="meta">
-                    <div class="title">{{ v.title }}</div>
+                    <div class="title" [title]="v.title">{{ v.title }}</div>
                     <div class="duration">{{ v.duration }}</div>
                   </div>
                   <a class="open" [href]="v.youtubeUrl" target="_blank" rel="noopener" aria-label="Open in new">

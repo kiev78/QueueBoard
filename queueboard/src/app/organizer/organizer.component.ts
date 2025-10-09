@@ -77,6 +77,7 @@ export class OrganizerComponent implements OnInit {
     }
     return filtered;
   });
+  hasPlaylists = computed(() => this.playlists().length > 0 && this.playlists()[0]?.id !== 'loading');
   connecting = signal(false);
   error = signal<string | null>(null);
   loadingMore = signal(false);
@@ -215,6 +216,60 @@ export class OrganizerComponent implements OnInit {
 
       // save merged state locally
       this.saveState();
+    } catch (err: any) {
+      this.error.set(err?.message || String(err));
+    } finally {
+      this.connecting.set(false);
+    }
+  }
+
+  async refresh() {
+    this.error.set(null);
+    this.connecting.set(true);
+    try {
+      // This assumes the user is already authenticated.
+      
+      // 1. Fetch the very first page of playlists, ignoring any stored state.
+      const { items: newPlaylistItems, nextPageToken } = await this.youtube.fetchPlaylists(undefined, 10);
+      const newPlaylists: PlaylistColumn[] = (newPlaylistItems || []).map((p: any) => ({
+        id: p.id,
+        title: p.snippet?.title || p.title || '',
+        description: p.snippet?.description || '',
+        color: '#e0e0e0',
+        videos: [] as VideoCard[]
+      }));
+
+      this.playlists.set(newPlaylists);
+      this.nextPageToken = nextPageToken;
+      this.preloadedAllVideos = false;
+
+      // 2. Fetch initial videos for each new playlist.
+      for (const pl of newPlaylists) {
+        try {
+          const { items, nextPageToken: videoNextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, 10);
+          const mapped: VideoCard[] = (items as any[]).map((v: any) => ({
+            id: v.id || v.videoId || v.snippet?.resourceId?.videoId || '',
+            title: v.snippet?.title || v.title || '',
+            description: v.snippet?.description || v.description || '',
+            duration: this.youtube.isoDurationToString(v.contentDetails?.duration || v.duration || ''),
+            thumbnail: v.snippet?.thumbnails?.default?.url || v.thumbnail || '',
+            tags: v.snippet?.tags || v.tags || [],
+            channelTitle: v.snippet?.channelTitle || v.channelTitle || '',
+            publishedAt: v.snippet?.publishedAt || v.publishedAt || '',
+            youtubeUrl: v.youtubeUrl || (v.snippet?.resourceId?.videoId ? `https://www.youtube.com/watch?v=${v.snippet.resourceId.videoId}` : '')
+          }));
+
+          this.playlists.update(current => 
+            current.map(p => p.id === pl.id ? { ...p, videos: mapped, nextPageToken: videoNextPageToken } : p)
+          );
+        } catch (e) {
+          console.error('Failed to load playlist items for', pl.id, e);
+        }
+      }
+
+      // 3. Overwrite the saved state with the fresh data.
+      this.saveState();
+
     } catch (err: any) {
       this.error.set(err?.message || String(err));
     } finally {
