@@ -4,7 +4,6 @@ import { RouterModule } from '@angular/router';
 import { CdkDragDrop, moveItemInArray, transferArrayItem, DragDropModule } from '@angular/cdk/drag-drop';
 import { FormsModule } from '@angular/forms';
 import { YoutubeApiService } from '../services';
-import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 
 interface VideoCard {
   id: string;
@@ -83,9 +82,9 @@ export class OrganizerComponent implements OnInit {
   loadingMore = signal(false);
 
   selectedVideo = signal<VideoCard | null>(null);
-  embedUrl = signal<SafeResourceUrl | null>(null);
-
-  private sanitizer = inject(DomSanitizer);
+  
+  private player?: YT.Player;
+  private isYouTubeApiLoaded = false;
   private nextPageToken: string | null | undefined = undefined;
 
   constructor(public youtube: YoutubeApiService) {}
@@ -359,17 +358,62 @@ export class OrganizerComponent implements OnInit {
     }
   }
  
+  private loadYouTubeApi() {
+    if (this.isYouTubeApiLoaded) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode!.insertBefore(tag, firstScriptTag);
+      (window as any).onYouTubeIframeAPIReady = () => {
+        this.isYouTubeApiLoaded = true;
+        resolve(undefined);
+      };
+    });
+  }
 
-  openVideo(v: VideoCard) {
+  async openVideo(v: VideoCard) {
     this.selectedVideo.set(v);
-    const id = v.id;
-    const url = `https://www.youtube.com/embed/${id}?autoplay=1&rel=0`;
-    this.embedUrl.set(this.sanitizer.bypassSecurityTrustResourceUrl(url));
+
+    // Give Angular a moment to render the player div
+    setTimeout(async () => {
+      if (this.player) {
+        this.player.destroy();
+      }
+      await this.loadYouTubeApi();
+      this.player = new YT.Player('player', {
+        height: '100%',
+        width: '100%',
+        videoId: v.id,
+        playerVars: {
+          autoplay: 1,
+          rel: 0,
+        },
+        events: {
+          onReady: (e) => {
+            e.target.getIframe()?.focus();
+          },
+          onStateChange: (e) => {
+            if (e.data === YT.PlayerState.CUED) {
+              e.target.playVideo();
+              e.target.getIframe()?.focus();
+            }
+          }
+        },
+      });
+    }, 0);
   }
 
   closeVideo() {
+    this.player?.destroy();
+    this.player = undefined;
     this.selectedVideo.set(null);
-    this.embedUrl.set(null);
+  }
+
+  setPlaybackRate(speed: number) {
+    this.player?.setPlaybackRate(speed);
   }
 
   drop(event: CdkDragDrop<VideoCard[]>, playlistId?: string) {
