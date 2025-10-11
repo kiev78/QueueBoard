@@ -34,8 +34,8 @@
             <span class="text-muted small">{{ playlist.videos.length }} videos</span></div>
           </div>
           <div class="card-body">
-            <div class="video-list" cdkDropList [cdkDropListData]="playlist.videos"
-              (cdkDropListDropped)="drop($event, playlist.id)">
+            <div class="video-list" cdkDropList [id]="playlist.id" [cdkDropListData]="playlist.videos"
+              (cdkDropListDropped)="drop($event)">
               <div class="video-card" *ngFor="let v of playlist.videos; trackBy: trackById" cdkDrag>
                 <div class="video-main">
                   <img *ngIf="v.thumbnail" [src]="v.thumbnail" alt="thumb" (click)="openVideo(v)" role="button"

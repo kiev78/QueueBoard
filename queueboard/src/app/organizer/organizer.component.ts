@@ -6,6 +6,7 @@ import { FormsModule } from '@angular/forms';
 import { YoutubeApiService } from '../services';
 
 interface VideoCard {
+  playlistItemId: string; // The ID of the item in the playlist, needed for removal
   id: string;
   title: string;
   description?: string;
@@ -108,7 +109,8 @@ export class OrganizerComponent implements OnInit {
         const { items, nextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, limit);
 
         const mapped: VideoCard[] = (items as any[]).map((v: any) => ({
-          id: v.id || v.videoId || v.snippet?.resourceId?.videoId || '',
+          id: v.videoId,
+          playlistItemId: v.id,
           title: v.snippet?.title || v.title || '',
           description: v.snippet?.description || v.description || '',
           duration: this.youtube.isoDurationToString(v.contentDetails?.duration || v.duration || ''),
@@ -155,7 +157,8 @@ export class OrganizerComponent implements OnInit {
             // SVG spinner markup as a string (can be rendered in template)
             description: `
              Loading...
-            `
+            `,
+            playlistItemId: 'spinner-item'
           }
         ]
       }
@@ -189,7 +192,8 @@ export class OrganizerComponent implements OnInit {
           const { items, nextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, 10);
 
           const mapped: VideoCard[] = (items as any[]).map((v: any) => ({
-            id: v.id || v.videoId || v.snippet?.resourceId?.videoId || '',
+            id: v.videoId,
+            playlistItemId: v.id,
             title: v.snippet?.title || v.title || '',
             description: v.snippet?.description || v.description || '',
             duration: this.youtube.isoDurationToString(v.contentDetails?.duration || v.duration || ''),
@@ -247,7 +251,8 @@ export class OrganizerComponent implements OnInit {
         try {
           const { items, nextPageToken: videoNextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, 10);
           const mapped: VideoCard[] = (items as any[]).map((v: any) => ({
-            id: v.id || v.videoId || v.snippet?.resourceId?.videoId || '',
+            id: v.videoId,
+            playlistItemId: v.id,
             title: v.snippet?.title || v.title || '',
             description: v.snippet?.description || v.description || '',
             duration: this.youtube.isoDurationToString(v.contentDetails?.duration || v.duration || ''),
@@ -293,7 +298,8 @@ export class OrganizerComponent implements OnInit {
           const { items, nextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, 10);
 
           const mapped: VideoCard[] = (items as any[]).map((v: any) => ({
-            id: v.id || v.videoId || v.snippet?.resourceId?.videoId || '',
+            id: v.videoId,
+            playlistItemId: v.id,
             title: v.snippet?.title || v.title || '',
             description: v.snippet?.description || v.description || '',
             duration: this.youtube.isoDurationToString(v.contentDetails?.duration || v.duration || ''),
@@ -329,7 +335,8 @@ export class OrganizerComponent implements OnInit {
     try {
       const { items: newVideos, nextPageToken } = await this.youtube.fetchPlaylistItems(playlist.id, 10, playlist.nextPageToken);
       const mapped: VideoCard[] = (newVideos as any[]).map((v: any) => ({
-        id: v.id || v.videoId || v.snippet?.resourceId?.videoId || '',
+        id: v.videoId,
+        playlistItemId: v.id,
         title: v.snippet?.title || v.title || '',
         description: v.snippet?.description || v.description || '',
         duration: this.youtube.isoDurationToString(v.contentDetails?.duration || v.duration || ''),
@@ -408,7 +415,6 @@ export class OrganizerComponent implements OnInit {
 
   closeVideo() {
     this.player?.destroy();
-    this.player = undefined;
     this.selectedVideo.set(null);
   }
 
@@ -416,21 +422,47 @@ export class OrganizerComponent implements OnInit {
     this.player?.setPlaybackRate(speed);
   }
 
-  drop(event: CdkDragDrop<VideoCard[]>, playlistId?: string) {
+  drop(event: CdkDragDrop<VideoCard[]>) {
     if (!event.previousContainer || !event.container) return;
 
     if (event.previousContainer === event.container) {
+      // Reordering within the same list
       moveItemInArray(event.container.data, event.previousIndex, event.currentIndex);
+      // Note: Syncing reordering with YouTube API is complex and requires `playlistItems.update`.
+      // For now, we only persist the order locally.
     } else {
+      // Moving to a different list
+      const videoToMove = event.previousContainer.data[event.previousIndex];
+      const sourcePlaylistId = event.previousContainer.id;
+      const destPlaylistId = event.container.id;
+
+      // Optimistically update the UI
       transferArrayItem(
         event.previousContainer.data,
         event.container.data,
         event.previousIndex,
         event.currentIndex
       );
+
+      // Sync with YouTube API
+      this.syncMove(videoToMove, sourcePlaylistId, destPlaylistId).catch(err => {
+        console.error('Failed to sync video move with YouTube:', err);
+        this.error.set(`Failed to move video: ${err.message || String(err)}`);
+        // TODO: Consider reverting the UI change on failure
+      });
     }
     // persist order after any change
     this.saveState();
+  }
+
+  private async syncMove(video: VideoCard, sourcePlaylistId: string, destPlaylistId: string) {
+    if (!video.playlistItemId) throw new Error('Cannot move video: missing playlistItemId.');
+    if (!video.id) throw new Error('Cannot move video: missing videoId.');
+
+    // 1. Remove from the old playlist
+    await this.youtube.removeVideoFromPlaylist(video.playlistItemId);
+    // 2. Add to the new playlist
+    await this.youtube.addVideoToPlaylist(destPlaylistId, video.id);
   }
 
   dropPlaylist(event: CdkDragDrop<PlaylistColumn[]>) {

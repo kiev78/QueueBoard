@@ -8,6 +8,12 @@ declare global {
   }
 }
 
+// A minimal type for the YouTube Video resource
+interface YouTubeVideoResource {
+  snippet: { tags?: string[] };
+  contentDetails: { duration: string };
+}
+
 @Injectable({ providedIn: 'root' })
 export class YoutubeApiService {
   private gapiLoaded = false;
@@ -19,7 +25,7 @@ export class YoutubeApiService {
   clientId = environment.googleClientId;
   apiKey = environment.googleApiKey;
   discoveryDocs = ['https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest'];
-  scope = 'https://www.googleapis.com/auth/youtube.readonly';
+  scope = 'https://www.googleapis.com/auth/youtube';
 
   async load(): Promise<void> {
     // Validate developer-supplied credentials to avoid unclear errors from the Google APIs
@@ -182,7 +188,7 @@ export class YoutubeApiService {
     if (!this.accessToken) throw new Error('Not authenticated');
 
     const listRes = await window.gapi.client.youtube.playlistItems.list({
-      part: 'snippet,contentDetails',
+      part: 'id,snippet,contentDetails',
       playlistId,
       maxResults,
       pageToken
@@ -201,22 +207,43 @@ export class YoutubeApiService {
       maxResults: videoIds.length
     });
 
-    const vids = vidsRes.result.items || [];
+    const videoDetailsMap = new Map<string, YouTubeVideoResource>((vidsRes.result.items || []).map((v: any) => [v.id, v]));
 
-    // Map video details into a small DTO
-    const mappedVids = vids.map((v: any) => ({
-      id: v.id,
-      title: v.snippet?.title,
-      description: v.snippet?.description,
-      duration: v.contentDetails?.duration, // ISO 8601 duration
-      thumbnail: v.snippet?.thumbnails?.medium?.url || v.snippet?.thumbnails?.default?.url,
-      tags: v.snippet?.tags || [],
-      channelTitle: v.snippet?.channelTitle,
-      publishedAt: v.snippet?.publishedAt,
-      youtubeUrl: `https://youtube.com/watch?v=${v.id}`
-    }));
+    // Merge playlistItem data (for playlistItemId) with video data (for duration, etc.)
+    const mappedVids = items.map((item: any) => {
+      const videoId = item.snippet.resourceId.videoId;
+      const videoDetails = videoDetailsMap.get(videoId);
+      return {
+        id: item.id, // This is the playlistItemId
+        videoId: videoId,
+        title: item.snippet.title,
+        description: item.snippet.description,
+        thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url,
+        channelTitle: item.snippet.channelTitle,
+        publishedAt: item.snippet.publishedAt,
+        duration: videoDetails?.contentDetails?.duration, // ISO 8601 duration
+        tags: videoDetails?.snippet?.tags || [],
+        youtubeUrl: `https://youtube.com/watch?v=${videoId}`
+      };
+    });
 
     return { items: mappedVids, nextPageToken: listRes.result.nextPageToken };
+  }
+
+  async addVideoToPlaylist(playlistId: string, videoId: string) {
+    if (!this.accessToken) throw new Error('Not authenticated for write operations.');
+    const response = await window.gapi.client.youtube.playlistItems.insert({
+      part: 'snippet',
+      resource: {
+        snippet: { playlistId, resourceId: { kind: 'youtube#video', videoId } }
+      }
+    });
+    return response.result;
+  }
+
+  async removeVideoFromPlaylist(playlistItemId: string) {
+    if (!this.accessToken) throw new Error('Not authenticated for write operations.');
+    return await window.gapi.client.youtube.playlistItems.delete({ id: playlistItemId });
   }
 
   // Small helper to convert ISO8601 duration to hh:mm:ss or mm:ss
