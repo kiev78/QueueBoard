@@ -39,10 +39,10 @@
               <div class="video-card" *ngFor="let v of playlist.videos; trackBy: trackById" cdkDrag>
                 <div class="video-main">
                   <img *ngIf="v.thumbnail" [src]="v.thumbnail" alt="thumb" (click)="openVideo(v)" role="button"
-                    tabindex="0" (keydown.enter)="openVideo(v)" [attr.aria-label]="'Play ' + (v.title || 'video')" [title]="'Play ' + (v.title || 'video')" />
+                    tabindex="0" (keydown.enter)="openVideo(v)" [attr.aria-label]="getPlay(v)" [title]="getPlay(v)" />
                   <div class="meta" (click)="toggleDetails(v)" role="button" tabindex="0" (keydown.enter)="toggleDetails(v)"
-                    [attr.aria-expanded]="v.detailsVisible" [attr.aria-controls]="'Toggle details-' + v.id" [title]="'Details ' + (v.title || 'video')">
-                    <div class="title" [title]="'Details ' + (v.title || 'video')">{{ v.title }}</div>
+                    [attr.aria-expanded]="v.detailsVisible" [attr.aria-controls]="'Toggle details-' + v.id" [title]="getDetails(v)">
+                    <div class="title" [title]="getDetails(v)">{{ v.title }}</div>
                     <div class="duration">{{ v.duration }}</div>
                   </div>
                   <a class="open" [href]="v.youtubeUrl" target="_blank" rel="noopener" aria-label="Open in new">

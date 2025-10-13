@@ -494,6 +494,14 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     video.detailsVisible = !video.detailsVisible;
   }
 
+  getDetails(v: VideoCard): string {
+    return 'Details ' + (v.title || 'video');
+  }
+
+  getPlay(v: VideoCard): string {
+    return 'Play ' + (v.title || 'video');
+  }
+
   private saveState(): void {
     if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
     try {
