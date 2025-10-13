@@ -1,9 +1,10 @@
-import { Component, OnInit, signal, computed, inject, PLATFORM_ID } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed, inject, PLATFORM_ID } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { CdkDragDrop, moveItemInArray, transferArrayItem, DragDropModule } from '@angular/cdk/drag-drop';
 import { FormsModule } from '@angular/forms';
 import { YoutubeApiService } from '../services';
+import { environment } from '../../env/environment';
 
 interface VideoCard {
   playlistItemId: string; // The ID of the item in the playlist, needed for removal
@@ -16,6 +17,7 @@ interface VideoCard {
   channelTitle?: string;
   publishedAt?: string;
   youtubeUrl?: string;
+  detailsVisible?: boolean;
 }
 
 interface PlaylistColumn {
@@ -34,7 +36,7 @@ interface PlaylistColumn {
   templateUrl: './organizer.component.html',
   styleUrls: ['./organizer.component.scss']
 })
-export class OrganizerComponent implements OnInit {
+export class OrganizerComponent implements OnInit, OnDestroy {
   playlists = signal<PlaylistColumn[]>([]);
   search = signal('');
   private preloadedAllVideos = false;
@@ -87,6 +89,7 @@ export class OrganizerComponent implements OnInit {
   private player?: YT.Player;
   private isYouTubeApiLoaded = false;
   private nextPageToken: string | null | undefined = undefined;
+  private pollingInterval: any;
 
   constructor(public youtube: YoutubeApiService) {}
 
@@ -166,6 +169,12 @@ export class OrganizerComponent implements OnInit {
     }
   }
 
+  ngOnDestroy(): void {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+    }
+  }
+
   async connectYouTube() {
     this.error.set(null);
     this.connecting.set(true);
@@ -219,6 +228,11 @@ export class OrganizerComponent implements OnInit {
 
       // save merged state locally
       this.saveState();
+
+      // Start polling for changes
+      if (this.pollingInterval) clearInterval(this.pollingInterval);
+      this.pollingInterval = setInterval(() => this.refresh(), environment.pollingIntervalMinutes * 60 * 1000); // 5 minutes
+
     } catch (err: any) {
       this.error.set(err?.message || String(err));
     } finally {
@@ -474,6 +488,10 @@ export class OrganizerComponent implements OnInit {
 
   trackById(index: number, item: any) {
     return item.id;
+  }
+
+  toggleDetails(video: VideoCard) {
+    video.detailsVisible = !video.detailsVisible;
   }
 
   private saveState(): void {

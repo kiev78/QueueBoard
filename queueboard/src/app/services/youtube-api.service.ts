@@ -170,6 +170,10 @@ export class YoutubeApiService {
     try { if (window?.gapi?.client) window.gapi.client.setToken(null); } catch (e) {}
   }
 
+  isAuthenticated(): boolean {
+    return !!this.accessToken;
+  }
+
   async fetchPlaylists(pageToken?: string, maxResults = 10) {
     if (!this.accessToken) throw new Error('Not authenticated');
     const params: any = { mine: true, maxResults, pageToken };
