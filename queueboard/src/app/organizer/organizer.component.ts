@@ -31,6 +31,12 @@ interface PlaylistColumn {
   color?: string;
   videos: VideoCard[];
   nextPageToken?: string;
+  sortId?: number;
+}
+
+interface PlaylistSort {
+  id: string;
+  sortId: number;
 }
 
 @Component({
@@ -42,6 +48,7 @@ interface PlaylistColumn {
 })
 export class OrganizerComponent implements OnInit, OnDestroy {
   playlists = signal<PlaylistColumn[]>([]);
+  playlistsSort: PlaylistSort[] = [];
   search = signal('');
   private preloadedAllVideos = false;
   preloading = signal(false);
@@ -150,8 +157,13 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
     const saved = this.loadState();
     if (saved) {
-      this.playlists.set(saved);
+      // Apply saved sort order from the full state
+      this.playlistsSort = saved.filter(p => p.sortId !== undefined).map(p => ({ id: p.id, sortId: p.sortId! }));
+      this.playlists.set(this.applySort(saved));
     } else {
+      // Fallback to loading just the sort state if full state is missing
+      const savedSort = this.loadSortState();
+      if (savedSort) this.playlistsSort = savedSort;
       this.playlists.set([
         {
           id: 'loading',
@@ -232,7 +244,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       this.pollingInterval = setInterval(() => this.refresh(), environment.pollingIntervalMinutes * 60 * 1000);
 
     } catch (err: any) {
-      this.error.set(err?.message || String(err));
+      this.error.set(err?.message || String(err)); 
     } finally {
       this.connecting.set(false);
     }
@@ -251,7 +263,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         videos: [] as VideoCard[]
       }));
 
-      this.playlists.set(newPlaylists);
+      this.playlists.set(this.applySort(newPlaylists));
       this.nextPageToken = nextPageToken;
       this.preloadedAllVideos = false;
 
@@ -524,8 +536,12 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
   dropPlaylist(event: CdkDragDrop<PlaylistColumn[]>) {
     const arr = [...this.playlists()];
-    moveItemInArray(arr, event.previousIndex, event.currentIndex);
-    this.playlists.set(arr);
+    moveItemInArray(arr, event.previousIndex, event.currentIndex); 
+    arr.forEach((playlist, index) => {
+      playlist.sortId = index;
+    });
+    this.playlistsSort = arr.filter(p => p.id !== 'load-more-sentinel').map(p => ({ id: p.id, sortId: p.sortId! }));
+    this.playlists.set(arr); 
     this.saveState();
   }
 
@@ -540,7 +556,8 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   private saveState(): void {
     if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
     try {
-      localStorage.setItem('queueboard_state_v1', JSON.stringify(this.playlists()));
+      localStorage.setItem('queueboard_state_v1', JSON.stringify(this.playlists())); 
+      localStorage.setItem('queueboard_sort_v1', JSON.stringify(this.playlistsSort));
     } catch (e) {
       console.warn('Failed to persist state', e);
     }
@@ -567,7 +584,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       }
 
       merged = stored.map((s) => {
-        const f = fetchedMap.get(s.id);
+        const f = fetchedMap.get(s.id); 
         if (f) {
           return { ...s, title: f.title || s.title, description: f.description || s.description, color: f.color || s.color } as PlaylistColumn;
         }
@@ -583,7 +600,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       merged = fetched;
     }
 
-    return { playlists: merged, nextPageToken };
+    return { playlists: this.applySort(merged), nextPageToken };
   }
 
   private loadState(): PlaylistColumn[] | null {
@@ -597,5 +614,27 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       console.warn('Failed to load state', e);
     }
     return null;
+  }
+
+  private loadSortState(): PlaylistSort[] | null {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem('queueboard_sort_v1');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed as PlaylistSort[];
+    } catch (e) {
+      console.warn('Failed to load sort state', e);
+    }
+    return null;
+  }
+
+  private applySort(playlists: PlaylistColumn[]): PlaylistColumn[] {
+    if (this.playlistsSort.length === 0) return playlists;
+    const sortMap = new Map(this.playlistsSort.map(s => [s.id, s.sortId]));
+    playlists.forEach(p => {
+      p.sortId = sortMap.get(p.id);
+    });
+    return playlists.sort((a, b) => (a.sortId ?? Infinity) - (b.sortId ?? Infinity));
   }
 }
