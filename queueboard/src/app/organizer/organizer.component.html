@@ -25,9 +25,9 @@
   <div class="board" cdkDropListOrientation="horizontal" cdkDropListGroup (cdkDropListDropped)="dropPlaylist($event)"
     cdkDropList [cdkDropListData]="filteredPlaylists()">
     <div class="column" *ngFor="let playlist of filteredPlaylists(); trackBy: trackById"
-      [style.borderTopColor]="playlist.color" [class.load-more-column]="playlist.id === 'load-more-sentinel'">
+      [style.borderTopColor]="playlist.color" [class.load-more-column]="playlist.id === loadMoreSentinelId">
       <!-- Regular Playlist Column -->
-      <ng-container *ngIf="playlist.id !== 'load-more-sentinel'">
+      <ng-container *ngIf="playlist.id !== loadMoreSentinelId">
         <div class="card playlist-card" cdkDrag>
           <div class="card-header">
             <div class="fw-bold">{{ playlist.title }}
@@ -70,7 +70,7 @@
       </ng-container>
 
       <!-- "Load More" Column -->
-      <ng-container *ngIf="playlist.id === 'load-more-sentinel'">
+      <ng-container *ngIf="playlist.id === loadMoreSentinelId">
         <div class="card load-more-card">
           <button class="btn btn-primary w-100 h-100" (click)="fetchMorePlaylists()" [disabled]="loadingMore()">
             <span *ngIf="!loadingMore()">Next Page &rarr;</span>
