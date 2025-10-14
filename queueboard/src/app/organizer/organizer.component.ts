@@ -18,6 +18,9 @@ interface VideoCard {
   publishedAt?: string;
   youtubeUrl?: string;
   detailsVisible?: boolean;
+  player?: YT.Player;
+  isPlaying?: boolean;
+  setSize?: (width: number, height: number) => void;
 }
 
 interface PlaylistColumn {
@@ -56,30 +59,30 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     if (q) {
       const matchText = (text?: string) => (text || '').toLowerCase().includes(q);
       filtered = this.playlists()
-      .map((pl) => {
-        // filter videos inside playlist
-        const videos = (pl.videos || []).filter((v) => {
-          if (matchText(v.title)) return true;
-          if (matchText(v.description)) return true;
-          if (v.tags && v.tags.some((t: string) => matchText(t))) return true;
-          if (matchText(v.channelTitle)) return true;
-          return false;
-        });
+        .map((pl) => {
+          // filter videos inside playlist
+          const videos = (pl.videos || []).filter((v) => {
+            if (matchText(v.title)) return true;
+            if (matchText(v.description)) return true;
+            if (v.tags && v.tags.some((t: string) => matchText(t))) return true;
+            if (matchText(v.channelTitle)) return true;
+            return false;
+          });
 
-        const playlistMatches = matchText(pl.title) || matchText(pl.description);
-        if (playlistMatches) {
-          // show all videos if playlist matches
-          return { ...pl, videos: pl.videos } as PlaylistColumn;
-        }
+          const playlistMatches = matchText(pl.title) || matchText(pl.description);
+          if (playlistMatches) {
+            // show all videos if playlist matches
+            return { ...pl, videos: pl.videos } as PlaylistColumn;
+          }
 
-        // only include playlist if some videos matched
-        if (videos.length > 0) {
-          return { ...pl, videos } as PlaylistColumn;
-        }
+          // only include playlist if some videos matched
+          if (videos.length > 0) {
+            return { ...pl, videos } as PlaylistColumn;
+          }
 
-        return null;
-      })
-      .filter((x): x is PlaylistColumn => x !== null);
+          return null;
+        })
+        .filter((x): x is PlaylistColumn => x !== null);
     }
 
     if (this.nextPageToken) {
@@ -92,14 +95,14 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   error = signal<string | null>(null);
   loadingMore = signal(false);
 
-  selectedVideo = signal<VideoCard | null>(null);
-  
-  private player?: YT.Player;
+  playingVideos = signal<VideoCard[]>([]);
+  minimizedVideos = signal<VideoCard[]>([]);
+
   private isYouTubeApiLoaded = false;
   private nextPageToken: string | null | undefined = undefined;
   private pollingInterval: any;
 
-  constructor(public youtube: YoutubeApiService) {}
+  constructor(public youtube: YoutubeApiService) { }
 
   // Called when the search input is focused/clicked. Start preloading videos
   // from all playlists (first time only) so the search can match video content.
@@ -236,7 +239,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     this.connecting.set(true);
     try {
       // This assumes the user is already authenticated.
-      
+
       // 1. Fetch the very first page of playlists, ignoring any stored state.
       const { items: newPlaylistItems, nextPageToken } = await this.youtube.fetchPlaylists(undefined, 10);
       const newPlaylists: PlaylistColumn[] = (newPlaylistItems || []).map((p: any) => ({
@@ -276,7 +279,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
             youtubeUrl: v.youtubeUrl || (v.snippet?.resourceId?.videoId ? `https://www.youtube.com/watch?v=${v.snippet.resourceId.videoId}` : '')
           }));
 
-          this.playlists.update(current => 
+          this.playlists.update(current =>
             current.map(p => p.id === pl.id ? { ...p, videos: mapped, nextPageToken: videoNextPageToken } : p)
           );
         } catch (e) {
@@ -371,13 +374,13 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         return [...currentPlaylists];
 
       });
-      
+
       this.saveState();
     } catch (e) {
       console.error('Failed to load more videos for playlist', playlist.id, e);
     }
   }
- 
+
   private loadYouTubeApi() {
     if (this.isYouTubeApiLoaded) {
       return Promise.resolve();
@@ -393,46 +396,160 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       };
     });
   }
-
   async openVideo(v: VideoCard) {
-    this.selectedVideo.set(v);
+    // Prevent duplicates
+    if (this.playingVideos().find(p => p.id === v.id) || this.minimizedVideos().find(p => p.id === v.id)) {
+      return;
+    }
 
-    // Give Angular a moment to render the player div
-    setTimeout(async () => {
-      if (this.player) {
-        this.player.destroy();
-      }
-      await this.loadYouTubeApi();
-      this.player = new YT.Player('player', {
-        height: '100%',
-        width: '100%',
-        videoId: v.id,
-        playerVars: {
-          autoplay: 1,
-          rel: 0,
-        },
-        events: {
-          onReady: (e) => {
-            e.target.getIframe()?.focus();
-          },
-          onStateChange: (e) => {
-            if (e.data === YT.PlayerState.CUED) {
-              e.target.playVideo();
-              e.target.getIframe()?.focus();
+    // Ensure a persistent portal slot and create a stable host for the player there.
+    const slot = this.ensurePortalSlot(v);
+    if (!slot) {
+      // If portal isn't present, fall back to existing behavior (shouldn't happen)
+      this.playingVideos.update(current => [...current, v]);
+      return;
+    }
+
+    // Create a stable host element inside the portal slot for the YT.Player to attach to.
+    // If a host already exists (from previous session), reuse it.
+    let initialHost = slot.querySelector<HTMLElement>(`#player-${v.id}`);
+    if (!initialHost) {
+      initialHost = document.createElement('div');
+      initialHost.id = `player-${v.id}`;
+      initialHost.className = 'player-host';
+      slot.appendChild(initialHost);
+    }
+
+    // Add to playing list so UI knows it's active (overlay may be created later)
+    this.playingVideos.update(current => [...current, v]);
+
+    // Create player inside the stable host in the portal
+    await this.loadYouTubeApi();
+    v.player = new YT.Player(initialHost.id, {
+      height: '100%',
+      width: '100%',
+      videoId: v.id,
+      playerVars: {
+        autoplay: 1,
+        rel: 0,
+      },
+      events: {
+        onReady: (e) => {
+          // If overlay host is present (overlay visible), move iframe there immediately
+          const overlayHost = document.getElementById(`player-${v.id}`);
+          if (overlayHost && overlayHost !== initialHost) {
+            // move iframe into overlay host for visible playback
+            overlayHost.appendChild(e.target.getIframe());
+            // restore size via API
+            const rect = overlayHost.getBoundingClientRect();
+            // restore player pixel size to match the host
+            if (rect.width && rect.height) {
+              (v.player as any)?.setSize(Math.floor(rect.width), Math.floor(rect.height));
             }
           }
+
+          e.target.getIframe()?.focus();
+          v.isPlaying = true;
         },
-      });
+        onStateChange: (e) => {
+          if (e.data === YT.PlayerState.PLAYING) {
+            v.isPlaying = true;
+          } else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) {
+            v.isPlaying = false;
+          }
+        }
+      },
+    });
+  }
+
+  private getPortal(): HTMLElement | null {
+    return document.getElementById('player-portal');
+  }
+
+  /** Create or return a stable wrapper element inside portal for this video id */
+  private ensurePortalSlot(v: VideoCard): HTMLElement | null {
+    const portal = this.getPortal();
+    if (!portal) return null;
+    let slot = portal.querySelector<HTMLElement>(`#portal-slot-${v.id}`);
+    if (!slot) {
+      slot = document.createElement('div');
+      slot.id = `portal-slot-${v.id}`;
+      slot.className = 'portal-slot';
+      // Use CSS to constrain size visually in minimized state
+      portal.appendChild(slot);
+    }
+    return slot;
+  }
+
+  /** Move the iframe into the portal slot (keeps player alive while minimized) */
+  private movePlayerToPortal(v: VideoCard): void {
+    const iframe = v.player?.getIframe();
+    if (!iframe) return;
+    const slot = this.ensurePortalSlot(v);
+    if (!slot) return;
+    slot.appendChild(iframe);
+    // Remove any inline sizing so CSS controls layout; sizing will be handled via setSize when restoring
+    iframe.style.width = '';
+    iframe.style.height = '';
+  }
+
+  /** Move the iframe from portal (or anywhere) into overlay host rendered by Angular */
+  private movePlayerIntoOverlay(v: VideoCard): void {
+    const iframe = v.player?.getIframe();
+    if (!iframe) return;
+    const host = document.getElementById(`player-${v.id}`);
+    if (!host) return;
+    host.appendChild(iframe);
+    // After DOM attach, restore player size to match host
+    const rect = host.getBoundingClientRect();
+    if (rect.width && rect.height) {
+      (v.player as any)?.setSize(Math.floor(rect.width), Math.floor(rect.height));
+    }
+  }
+
+  closeVideo(v: VideoCard) {
+    v.player?.destroy();
+    v.player = undefined;
+    this.playingVideos.update(current => current.filter(p => p.id !== v.id));
+    this.minimizedVideos.update(current => current.filter(p => p.id !== v.id));
+    const slot = document.getElementById(`portal-slot-${v.id}`);
+    slot?.remove();
+  }
+
+  minimizeVideo(v: VideoCard) {
+    // Move iframe into portal before Angular removes overlay so the iframe is never orphaned
+    if (v.player) {
+      this.movePlayerToPortal(v);
+    }
+
+    // Now update signals (this removes the overlay DOM)
+    this.playingVideos.update(current => current.filter(p => p.id !== v.id));
+    this.minimizedVideos.update(current => [...current, v]);
+  }
+
+  restoreVideo(v: VideoCard) {
+    // Add back to playing list so Angular will create the overlay host element
+    this.minimizedVideos.update(current => current.filter(p => p.id !== v.id));
+    this.playingVideos.update(current => [...current, v]);
+
+    // After overlay host renders, move iframe into it
+    setTimeout(() => {
+      this.movePlayerIntoOverlay(v);
+      // Focus the iframe
+      v.player?.getIframe()?.focus();
     }, 0);
   }
 
-  closeVideo() {
-    this.player?.destroy();
-    this.selectedVideo.set(null);
+  setPlaybackRate(v: VideoCard, speed: number) {
+    v.player?.setPlaybackRate(speed);
   }
 
-  setPlaybackRate(speed: number) {
-    this.player?.setPlaybackRate(speed);
+  togglePlayPause(v: VideoCard) {
+    if (v.isPlaying) {
+      v.player?.pauseVideo();
+    } else {
+      v.player?.playVideo();
+    }
   }
 
   drop(event: CdkDragDrop<VideoCard[]>) {

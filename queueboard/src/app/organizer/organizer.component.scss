@@ -227,6 +227,21 @@
   z-index: 1000;
 }
 
+.player-portal {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.portal-slot {
+  /* This holds the player iframe to keep it alive but is not visually displayed. */
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
 .player-backdrop {
   position: absolute;
   inset: 0;
@@ -386,4 +401,77 @@
 .column.cdk-drop-list-receiving {
   background: rgba(0,0,0,0.04);
   border-color: rgba(0,0,0,0.1);
+}
+
+.minimized-videos-stack {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 1002;
+}
+
+.minimized-video-card {
+  position: relative;
+  width: 200px;
+  height: 112px; /* 16:9 aspect ratio */
+  background: #000;
+  border-radius: 4px;
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  transition: transform 150ms ease;
+}
+
+.minimized-video-card:hover {
+  transform: scale(1.05);
+}
+
+/* When minimized, place iframe inside portal but visually constrain with minimized card styles */
+.minimized-video-card img,
+.minimized-video-card .minimized-placeholder {
+  width: 160px;
+  height: 90px;
+  object-fit: cover;
+}
+
+.minimized-video-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.4);
+}
+
+.minimized-video-overlay .btn-icon {
+  color: #fff;
+  background: rgba(0,0,0,0.5);
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+}
+
+.close-minimized {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  color: #fff;
+  background: rgba(0,0,0,0.5);
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  cursor: pointer;
 }
