@@ -11,6 +11,9 @@ declare namespace YT {
         stopVideo(): void;
         getVideoUrl(): string;
         getPlayerState(): PlayerState;
+        getCurrentTime(): number;
+        seekTo(seconds: number, allowSeekAhead: boolean): void;
+        setSize(width: number, height: number): void;
     }
 
     interface PlayerOptions {

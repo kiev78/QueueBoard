@@ -21,6 +21,8 @@ interface VideoCard {
   player?: YT.Player;
   isPlaying?: boolean;
   setSize?: (width: number, height: number) => void;
+  hasMovedToOverlay?: boolean;
+  resumeTime?: number; // in seconds
 }
 
 interface PlaylistColumn {
@@ -410,12 +412,12 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // Create a stable host element inside the portal slot for the YT.Player to attach to.
-    // If a host already exists (from previous session), reuse it.
-    let initialHost = slot.querySelector<HTMLElement>(`#player-${v.id}`);
+    // create a portal-specific host id so it never collides with Angular overlay host
+    const portalHostId = `portal-player-${v.id}`;
+    let initialHost = slot.querySelector<HTMLElement>(`#${portalHostId}`);
     if (!initialHost) {
       initialHost = document.createElement('div');
-      initialHost.id = `player-${v.id}`;
+      initialHost.id = portalHostId;
       initialHost.className = 'player-host';
       slot.appendChild(initialHost);
     }
@@ -432,25 +434,37 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       playerVars: {
         autoplay: 1,
         rel: 0,
+
+        start: v.resumeTime ? Math.floor(v.resumeTime) : 0
       },
+
       events: {
         onReady: (e) => {
-          // If overlay host is present (overlay visible), move iframe there immediately
-          const overlayHost = document.getElementById(`player-${v.id}`);
-          if (overlayHost && overlayHost !== initialHost) {
-            // move iframe into overlay host for visible playback
-            overlayHost.appendChild(e.target.getIframe());
-            // restore size via API
-            const rect = overlayHost.getBoundingClientRect();
-            // restore player pixel size to match the host
-            if (rect.width && rect.height) {
-              (v.player as any)?.setSize(Math.floor(rect.width), Math.floor(rect.height));
-            }
-          }
+          const iframe = e.target.getIframe();
 
-          e.target.getIframe()?.focus();
-          v.isPlaying = true;
-        },
+          const tryMoveToOverlay = () => {
+            const overlayHost = document.getElementById(`player-${v.id}`);
+            const portalHost = document.getElementById(`portal-player-${v.id}`);
+
+            if (v.hasMovedToOverlay || !iframe) return;
+
+            if (overlayHost && portalHost && overlayHost !== portalHost) {
+              overlayHost.appendChild(iframe);
+              const rect = overlayHost.getBoundingClientRect();
+              if (rect.width && rect.height) {
+                (v.player as any)?.setSize(Math.floor(rect.width), Math.floor(rect.height));
+              }
+              iframe.focus();
+              v.hasMovedToOverlay = true; // ✅ prevent future moves
+              v.isPlaying = true;
+            } else {
+              setTimeout(tryMoveToOverlay, 100);
+            }
+          };
+
+          tryMoveToOverlay();
+        }
+        ,
         onStateChange: (e) => {
           if (e.data === YT.PlayerState.PLAYING) {
             v.isPlaying = true;
@@ -475,7 +489,10 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       slot = document.createElement('div');
       slot.id = `portal-slot-${v.id}`;
       slot.className = 'portal-slot';
-      // Use CSS to constrain size visually in minimized state
+      const host = document.createElement('div');
+      host.id = `portal-player-${v.id}`;
+      host.className = 'player-host';
+      slot.appendChild(host);
       portal.appendChild(slot);
     }
     return slot;
@@ -487,8 +504,16 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     if (!iframe) return;
     const slot = this.ensurePortalSlot(v);
     if (!slot) return;
-    slot.appendChild(iframe);
-    // Remove any inline sizing so CSS controls layout; sizing will be handled via setSize when restoring
+    const portalHost = slot.querySelector<HTMLElement>(`#portal-player-${v.id}`) || slot;
+    // ensure a portal host container exists (create if missing)
+    let host = portalHost;
+    if (!portalHost.id) {
+      host = document.createElement('div');
+      host.id = `portal-player-${v.id}`;
+      host.className = 'player-host';
+      slot.appendChild(host);
+    }
+    host.appendChild(iframe);
     iframe.style.width = '';
     iframe.style.height = '';
   }
@@ -497,11 +522,21 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   private movePlayerIntoOverlay(v: VideoCard): void {
     const iframe = v.player?.getIframe();
     if (!iframe) return;
-    const host = document.getElementById(`player-${v.id}`);
-    if (!host) return;
-    host.appendChild(iframe);
-    // After DOM attach, restore player size to match host
-    const rect = host.getBoundingClientRect();
+
+    const overlayHost = document.getElementById(`player-${v.id}`);
+    if (!overlayHost) return;
+
+    // Move iframe into overlay host
+    overlayHost.appendChild(iframe);
+
+    // Strip inline width/height attributes
+    iframe.removeAttribute('width');
+    iframe.removeAttribute('height');
+    iframe.style.width = '100%';
+    iframe.style.height = '100%';
+
+    // Resize via API
+    const rect = overlayHost.getBoundingClientRect();
     if (rect.width && rect.height) {
       (v.player as any)?.setSize(Math.floor(rect.width), Math.floor(rect.height));
     }
@@ -510,21 +545,34 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   closeVideo(v: VideoCard) {
     v.player?.destroy();
     v.player = undefined;
+    v.resumeTime = undefined;
     this.playingVideos.update(current => current.filter(p => p.id !== v.id));
     this.minimizedVideos.update(current => current.filter(p => p.id !== v.id));
     const slot = document.getElementById(`portal-slot-${v.id}`);
     slot?.remove();
   }
 
+  formatTime(seconds: number): string {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
+
   minimizeVideo(v: VideoCard) {
     // Move iframe into portal before Angular removes overlay so the iframe is never orphaned
     if (v.player) {
+      try {
+        v.resumeTime = v.player.getCurrentTime(); // capture current time
+      } catch { }
       this.movePlayerToPortal(v);
     }
 
     // Now update signals (this removes the overlay DOM)
     this.playingVideos.update(current => current.filter(p => p.id !== v.id));
     this.minimizedVideos.update(current => [...current, v]);
+    v.hasMovedToOverlay = false;
+
   }
 
   restoreVideo(v: VideoCard) {

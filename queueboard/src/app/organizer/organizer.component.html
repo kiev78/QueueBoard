@@ -92,6 +92,7 @@
           <span *ngIf="v.isPlaying">❚❚</span>
           <span *ngIf="!v.isPlaying">▶</span>
         </button>
+        <span *ngIf="v.resumeTime" class="resume-at">▶ Resume at {{ formatTime(v.resumeTime) }}</span>
       </div>
       <button class="btn btn-sm btn-icon close-minimized" (click)="closeVideo(v); $event.stopPropagation();">✕</button>
     </div>
