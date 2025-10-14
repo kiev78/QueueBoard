@@ -3,11 +3,12 @@ import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { CdkDragDrop, moveItemInArray, transferArrayItem, DragDropModule } from '@angular/cdk/drag-drop';
 import { FormsModule } from '@angular/forms';
+import { YouTubePlayerModule } from '@angular/youtube-player';
 import { YoutubeApiService } from '../services';
 import { environment } from '../../env/environment';
 
 interface VideoCard {
-  playlistItemId: string; // The ID of the item in the playlist, needed for removal
+  playlistItemId: string;
   id: string;
   title: string;
   description?: string;
@@ -18,6 +19,9 @@ interface VideoCard {
   publishedAt?: string;
   youtubeUrl?: string;
   detailsVisible?: boolean;
+  isMinimized?: boolean;
+  isPlaying?: boolean;
+  resumeTime?: number;
 }
 
 interface PlaylistColumn {
@@ -32,7 +36,7 @@ interface PlaylistColumn {
 @Component({
   selector: 'app-organizer',
   standalone: true,
-  imports: [CommonModule, RouterModule, DragDropModule, FormsModule],
+  imports: [CommonModule, RouterModule, DragDropModule, FormsModule, YouTubePlayerModule],
   templateUrl: './organizer.component.html',
   styleUrls: ['./organizer.component.scss']
 })
@@ -49,7 +53,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       const matchText = (text?: string) => (text || '').toLowerCase().includes(q);
       filtered = this.playlists()
       .map((pl) => {
-        // filter videos inside playlist
         const videos = (pl.videos || []).filter((v) => {
           if (matchText(v.title)) return true;
           if (matchText(v.description)) return true;
@@ -60,11 +63,9 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
         const playlistMatches = matchText(pl.title) || matchText(pl.description);
         if (playlistMatches) {
-          // show all videos if playlist matches
           return { ...pl, videos: pl.videos } as PlaylistColumn;
         }
 
-        // only include playlist if some videos matched
         if (videos.length > 0) {
           return { ...pl, videos } as PlaylistColumn;
         }
@@ -85,16 +86,19 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   loadingMore = signal(false);
 
   selectedVideo = signal<VideoCard | null>(null);
+  minimizedVideos = signal<VideoCard[]>([]);
+  isMinimized = computed(() => this.selectedVideo()?.isMinimized ?? false);
+  playerReady = signal(false);
+  currentPlaybackRate = signal(1);
+  playerState = signal<YT.PlayerState | null>(null);
+  private playerInstances = new Map<string, YT.Player>();
   
-  private player?: YT.Player;
-  private isYouTubeApiLoaded = false;
   private nextPageToken: string | null | undefined = undefined;
   private pollingInterval: any;
+  private platformId = inject(PLATFORM_ID);
 
   constructor(public youtube: YoutubeApiService) {}
 
-  // Called when the search input is focused/clicked. Start preloading videos
-  // from all playlists (first time only) so the search can match video content.
   onSearchFocus() {
     if (this.preloadedAllVideos || this.preloading()) return;
     this.preloading.set(true);
@@ -103,7 +107,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       .finally(() => this.preloading.set(false));
   }
 
-  // Fetch items for every playlist that has empty videos and populate them.
   private async fetchAllPlaylistItems(limit = 25) {
     const pls = [...this.playlists()];
     for (const pl of pls) {
@@ -138,34 +141,35 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
-    // Show loading spinner SVG while loading playlists
-    // try restore saved state
+    // Load YouTube IFrame API
+    if (isPlatformBrowser(this.platformId)) {
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      document.body.appendChild(tag);
+    }
+
     const saved = this.loadState();
     if (saved) {
       this.playlists.set(saved);
     } else {
-      // seed with example data for now
       this.playlists.set([
-      {
-        id: 'loading',
-        title: '',
-        description: '',
-        color: '#fff',
-        videos: [
-          {
-            id: 'spinner',
-            title: '',
-            youtubeUrl: '',
-            thumbnail: '',
-            // SVG spinner markup as a string (can be rendered in template)
-            description: `
-             Loading...
-            `,
-            playlistItemId: 'spinner-item'
-          }
-        ]
-      }
-    ]);
+        {
+          id: 'loading',
+          title: '',
+          description: '',
+          color: '#fff',
+          videos: [
+            {
+              id: 'spinner',
+              title: '',
+              youtubeUrl: '',
+              thumbnail: '',
+              description: 'Loading...',
+              playlistItemId: 'spinner-item'
+            }
+          ]
+        }
+      ]);
     }
   }
 
@@ -186,16 +190,14 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         return;
       }
 
-      // Fetch playlists and merge with stored state
       const { playlists, nextPageToken } = await this.fetchAndMergePlaylists(undefined, 10);
       this.playlists.set(playlists);
       this.nextPageToken = nextPageToken;
 
-      // For each playlist, fetch items and populate videos (only if empty)
       for (const pl of this.playlists()) {
         try {
           if (pl.videos && pl.videos.length > 0) {
-            continue; // preserve stored videos
+            continue;
           }
 
           const { items, nextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, 10);
@@ -213,7 +215,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
             youtubeUrl: v.youtubeUrl || (v.snippet?.resourceId?.videoId ? `https://www.youtube.com/watch?v=${v.snippet.resourceId.videoId}` : '')
           }));
 
-          // update single playlist videos in-place in signal array
           const curr = [...this.playlists()];
           const idx = curr.findIndex(x => x.id === pl.id);
           if (idx >= 0) {
@@ -221,17 +222,14 @@ export class OrganizerComponent implements OnInit, OnDestroy {
             this.playlists.set(curr);
           }
         } catch (e) {
-          // ignore per-playlist errors but log
           console.error('Failed to load playlist items for', pl.id, e);
         }
       }
 
-      // save merged state locally
       this.saveState();
 
-      // Start polling for changes
       if (this.pollingInterval) clearInterval(this.pollingInterval);
-      this.pollingInterval = setInterval(() => this.refresh(), environment.pollingIntervalMinutes * 60 * 1000); // 5 minutes
+      this.pollingInterval = setInterval(() => this.refresh(), environment.pollingIntervalMinutes * 60 * 1000);
 
     } catch (err: any) {
       this.error.set(err?.message || String(err));
@@ -244,9 +242,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     this.error.set(null);
     this.connecting.set(true);
     try {
-      // This assumes the user is already authenticated.
-      
-      // 1. Fetch the very first page of playlists, ignoring any stored state.
       const { items: newPlaylistItems, nextPageToken } = await this.youtube.fetchPlaylists(undefined, 10);
       const newPlaylists: PlaylistColumn[] = (newPlaylistItems || []).map((p: any) => ({
         id: p.id,
@@ -260,7 +255,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       this.nextPageToken = nextPageToken;
       this.preloadedAllVideos = false;
 
-      // 2. Fetch initial videos for each new playlist.
       for (const pl of newPlaylists) {
         try {
           const { items, nextPageToken: videoNextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, 10);
@@ -285,7 +279,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         }
       }
 
-      // 3. Overwrite the saved state with the fresh data.
       this.saveState();
 
     } catch (err: any) {
@@ -306,7 +299,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       this.playlists.update(current => [...current, ...newPlaylists]);
       this.nextPageToken = nextPageToken;
 
-      // Now fetch videos for the new playlists
       for (const pl of newPlaylists) {
         try {
           const { items, nextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, 10);
@@ -324,20 +316,17 @@ export class OrganizerComponent implements OnInit, OnDestroy {
             youtubeUrl: v.youtubeUrl || (v.snippet?.resourceId?.videoId ? `https://www.youtube.com/watch?v=${v.snippet.resourceId.videoId}` : '')
           }));
 
-          // Update the specific playlist with its videos
           this.playlists.update(current => current.map(p => p.id === pl.id ? { ...p, videos: mapped, nextPageToken } : p));
 
         } catch (e) {
-          // ignore per-playlist errors but log
           console.error('Failed to load playlist items for', pl.id, e);
         }
       }
 
-      // Save the newly added playlists and videos
       this.saveState();
     } catch (err: any) {
       this.error.set(err?.message || String(err));
-      this.nextPageToken = null; // Stop trying on error
+      this.nextPageToken = null;
     } finally {
       this.loadingMore.set(false);
     }
@@ -370,7 +359,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
           currentPlaylists[plIndex] = updatedPlaylist;
         }
         return [...currentPlaylists];
-
       });
       
       this.saveState();
@@ -378,79 +366,139 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       console.error('Failed to load more videos for playlist', playlist.id, e);
     }
   }
- 
-  private loadYouTubeApi() {
-    if (this.isYouTubeApiLoaded) {
-      return Promise.resolve();
+
+  openVideo(v: VideoCard) {
+    // If there's a currently playing (but minimized) video, close it.
+    if (this.selectedVideo()) {
+      this.closeVideo(this.selectedVideo()!);
     }
-    return new Promise((resolve) => {
-      const tag = document.createElement('script');
-      tag.src = 'https://www.youtube.com/iframe_api';
-      const firstScriptTag = document.getElementsByTagName('script')[0];
-      firstScriptTag.parentNode!.insertBefore(tag, firstScriptTag);
-      (window as any).onYouTubeIframeAPIReady = () => {
-        this.isYouTubeApiLoaded = true;
-        resolve(undefined);
-      };
-    });
-  }
 
-  async openVideo(v: VideoCard) {
+    // If the clicked video was in the minimized list, remove it.
+    this.minimizedVideos.update(videos => videos.filter(vid => vid.id !== v.id));
+
     this.selectedVideo.set(v);
-
-    // Give Angular a moment to render the player div
-    setTimeout(async () => {
-      if (this.player) {
-        this.player.destroy();
-      }
-      await this.loadYouTubeApi();
-      this.player = new YT.Player('player', {
-        height: '100%',
-        width: '100%',
-        videoId: v.id,
-        playerVars: {
-          autoplay: 1,
-          rel: 0,
-        },
-        events: {
-          onReady: (e) => {
-            e.target.getIframe()?.focus();
-          },
-          onStateChange: (e) => {
-            if (e.data === YT.PlayerState.CUED) {
-              e.target.playVideo();
-              e.target.getIframe()?.focus();
-            }
-          }
-        },
-      });
-    }, 0);
+    this.playerReady.set(false);
   }
 
-  closeVideo() {
-    this.player?.destroy();
+  closeVideo(video?: VideoCard) {
+    const videoToClose = video || this.selectedVideo();
+    if (!videoToClose) return;
+
+    // If the video to close is the currently selected one
+    if (this.selectedVideo()?.id === videoToClose.id) {
+      const player = this.playerInstances.get(videoToClose.id);
+      player?.destroy();
+      this.playerInstances.delete(videoToClose.id);
+      this.selectedVideo.set(null);
+    }
+
+    // Remove from minimized list
+    this.minimizedVideos.update(videos => videos.filter(v => v.id !== videoToClose.id));
+
+    this.playerReady.set(false);
+    this.currentPlaybackRate.set(1);
+    this.playerState.set(null);
+  }
+
+  minimizeVideo() {
+    const videoToMinimize = this.selectedVideo();
+    if (!videoToMinimize) return;
+
+    const player = this.playerInstances.get(videoToMinimize.id);
+    const currentTime = player?.getCurrentTime() ?? 0;
+
+    const minimizedVideo: VideoCard = {
+      ...videoToMinimize,
+      isMinimized: true,
+      resumeTime: currentTime,
+    };
+
+    this.minimizedVideos.update(videos => {
+      if (videos.some(v => v.id === minimizedVideo.id)) {
+        return videos;
+      }
+      return [...videos, minimizedVideo];
+    });
+
+    // Close the main player
     this.selectedVideo.set(null);
+    player?.destroy();
+    this.playerInstances.delete(videoToMinimize.id);
+  }
+
+  restoreVideo(video: VideoCard) {
+    if (this.selectedVideo()?.id === video.id) {
+      // It's already the selected one, just un-minimize
+      this.selectedVideo.update(v => ({ ...v!, isMinimized: false }));
+      this.minimizedVideos.update(videos => videos.filter(v => v.id !== video.id));
+    } else {
+      // A different video is being restored, so open it
+      this.openVideo(video);
+    }
+  }
+
+  onPlayerReady(event: YT.PlayerEvent) {
+    const player = event.target;
+    const videoUrl = player.getVideoUrl(); // e.g., "https://www.youtube.com/watch?v=VIDEO_ID&feature=..."
+    const videoId = new URL(videoUrl).searchParams.get('v');
+
+    if (!videoId) {
+      console.error('[onPlayerReady] Could not extract videoId from URL:', videoUrl);
+      return;
+    }
+
+    this.playerInstances.set(videoId, player);
+    
+    const video = this.selectedVideo()?.id === videoId 
+      ? this.selectedVideo()
+      : this.minimizedVideos().find(v => v.id === videoId);
+
+    const startSeconds = Math.floor(video?.resumeTime ?? 0);
+
+    if (startSeconds > 0) {
+      player.seekTo(startSeconds, true);
+    }
+    player.playVideo();
+    this.playerReady.set(true); // Keep for main player controls
+  }
+
+  onPlayerStateChange(event: YT.PlayerEvent) {
+    this.playerState.set(event.data);
   }
 
   setPlaybackRate(speed: number) {
-    this.player?.setPlaybackRate(speed);
+    this.currentPlaybackRate.set(speed);
+    const video = this.selectedVideo();
+    if (video) {
+      const player = this.playerInstances.get(video.id);
+      player?.setPlaybackRate(speed);
+    }
+  }
+
+  togglePlayPause(video: VideoCard) {
+    const player = this.playerInstances.get(video.id);
+    if (!player) return;
+
+    const currentState = player.getPlayerState();
+    if (currentState === YT.PlayerState.PLAYING || currentState === YT.PlayerState.BUFFERING) {
+      player.pauseVideo();
+    } else {
+      player.playVideo();
+    }
+    // Update the global state so the UI for the minimized icon can react.
+    this.playerState.set(player.getPlayerState());
   }
 
   drop(event: CdkDragDrop<VideoCard[]>) {
     if (!event.previousContainer || !event.container) return;
 
     if (event.previousContainer === event.container) {
-      // Reordering within the same list
       moveItemInArray(event.container.data, event.previousIndex, event.currentIndex);
-      // Note: Syncing reordering with YouTube API is complex and requires `playlistItems.update`.
-      // For now, we only persist the order locally.
     } else {
-      // Moving to a different list
       const videoToMove = event.previousContainer.data[event.previousIndex];
       const sourcePlaylistId = event.previousContainer.id;
       const destPlaylistId = event.container.id;
 
-      // Optimistically update the UI
       transferArrayItem(
         event.previousContainer.data,
         event.container.data,
@@ -458,14 +506,11 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         event.currentIndex
       );
 
-      // Sync with YouTube API
       this.syncMove(videoToMove, sourcePlaylistId, destPlaylistId).catch(err => {
         console.error('Failed to sync video move with YouTube:', err);
         this.error.set(`Failed to move video: ${err.message || String(err)}`);
-        // TODO: Consider reverting the UI change on failure
       });
     }
-    // persist order after any change
     this.saveState();
   }
 
@@ -473,9 +518,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     if (!video.playlistItemId) throw new Error('Cannot move video: missing playlistItemId.');
     if (!video.id) throw new Error('Cannot move video: missing videoId.');
 
-    // 1. Remove from the old playlist
     await this.youtube.removeVideoFromPlaylist(video.playlistItemId);
-    // 2. Add to the new playlist
     await this.youtube.addVideoToPlaylist(destPlaylistId, video.id);
   }
 
@@ -514,28 +557,23 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     }));
     const nextPageToken = res?.nextPageToken;
 
-    // merge with saved state (preserve user order and video order)
     const stored = this.loadState();
     let merged: PlaylistColumn[] = [];
     const fetchedMap = new Map(fetched.map((f: any) => [f.id, f]));
 
     if (stored && stored.length) {
-      // On subsequent page fetches, we don't merge with stored, just return the new items.
       if (pageToken) {
         return { playlists: fetched, nextPageToken };
       }
 
-      // Start with stored order
       merged = stored.map((s) => {
         const f = fetchedMap.get(s.id);
         if (f) {
-          // update metadata but keep stored videos/order
           return { ...s, title: f.title || s.title, description: f.description || s.description, color: f.color || s.color } as PlaylistColumn;
         }
         return s;
       });
 
-      // Prepend any fetched playlists not in stored (new playlists)
       for (const f of fetched) {
         if (!merged.find((m) => m.id === f.id)) {
           merged.unshift(f);

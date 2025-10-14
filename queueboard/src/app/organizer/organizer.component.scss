@@ -50,9 +50,7 @@
   flex-direction: column;
   gap: 0.5rem;
   min-height: 50px;
-
-/* make each column scroll vertically when content exceeds a reasonable height */
-  max-height: 520px; /* approx 10 items at ~48-56px each plus padding */
+  max-height: 520px;
   overflow-y: auto;
   padding-right: 0.1rem;
 }
@@ -88,7 +86,7 @@
   gap: 0.5rem;
   align-items: center;
   width: 100%;
-  min-width: 0; /* allow children to shrink */
+  min-width: 0;
 }
 
 .video-main img {
@@ -110,7 +108,7 @@
 
 .meta {
   flex: 1 1 auto;
-  min-width: 0; /* important for text-overflow inside flex */
+  min-width: 0;
 }
 
 .meta .title {
@@ -132,7 +130,7 @@
 
 .video-main .open {
   margin-left: 0.5rem;
-  margin-inline-start: auto; /* push to the right */
+  margin-inline-start: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -146,7 +144,6 @@
   flex: 1 1 auto;
 }
 
-/* expanded details on hover */
 .video-details {
   width: 100%;
   max-height: 0;
@@ -171,42 +168,29 @@
   max-height: 5rem;
   overflow: auto;
   flex: 1 1 auto;
-}
-
-/* leave room at bottom of the scrolling description so actions are never overlapped */
-.video-details .desc {
-  padding-bottom: 48px; /* space for actions */
+  padding-bottom: 48px;
 }
 
 .video-details .actions {
   align-items: center;
-}
-
-/* keep actions visible above the desc scrollbar */
-.video-details .actions {
   padding-top: 6px;
   z-index: 2;
 }
 
 .video-details .actions .open-ext {
-  margin-left: auto; /* push to the right */
+  margin-left: auto;
   white-space: nowrap;
-}
-
-.video-details .actions button {
-  flex: 0 0 auto; /* don't stretch */
-  white-space: nowrap;
-}
-
-.video-details .actions .open-ext {
   flex: 0 0 auto;
   color: #2b6cb0;
   text-decoration: underline;
 }
 
-/* Compact appearance for Play button inside video details */
+.video-details .actions button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .play-btn {
-  /* Bootstrap-compatible compact button appearance */
   min-height: 36px;
   height: 36px;
   line-height: 1;
@@ -226,6 +210,7 @@
   justify-content: center;
   z-index: 1000;
 }
+ 
 
 .player-backdrop {
   position: absolute;
@@ -254,11 +239,18 @@
 .player-body {
   background: #000;
   aspect-ratio: 16/9;
-}
-
-.player-body iframe {
-  width: 100%;
-  height: 100%;
+  position: relative;
+  
+  // This ensures the youtube-player component and the iframe it creates fill the container.
+  // Using :host-context and a direct child selector is a more encapsulated way than ::ng-deep.
+  :host-context(.player-body) > youtube-player,
+  ::ng-deep iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+  }
 }
 
 .player-controls {
@@ -267,10 +259,14 @@
   padding: 0.5rem 1rem;
   background: #f0f0f0;
   border-top: 1px solid rgba(0,0,0,0.06);
+  
+  button.active {
+    background-color: #0d6efd;
+    color: white;
+    border-color: #0d6efd;
+  }
 }
 
-/* toolbar and control styles */
-/* Use Bootstrap navbar instead of mat-toolbar */
 .navbar {
   position: sticky;
   top: 0;
@@ -284,19 +280,6 @@
   min-width: 260px;
 }
 
-/* Compact appearance for Play button inside video details (Bootstrap button) */
-.play-btn {
-  min-height: 36px;
-  height: 36px;
-  line-height: 1;
-  padding: 0 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  min-width: 100px;
-}
-/* show a thin page-level hint scrollbar when content overflows horizontally */
 :host {
   display: block;
   overflow-x: auto;
@@ -308,7 +291,9 @@
     gap: 0.75rem;
   }
 
-  .controls input { min-width: 160px; }
+  .controls input { 
+    min-width: 160px; 
+  }
 }
 
 .no-results {
@@ -357,7 +342,6 @@
   text-align: center;
 }
 
-/* CDK Drag & Drop styles */
 .cdk-drag-preview {
   box-sizing: border-box;
   border-radius: 15px;
@@ -386,4 +370,67 @@
 .column.cdk-drop-list-receiving {
   background: rgba(0,0,0,0.04);
   border-color: rgba(0,0,0,0.1);
+}
+
+.minimized-videos-stack {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 1050;
+}
+
+.minimized-video-card {
+  position: relative;
+  width: 120px;
+  height: 67px;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  cursor: pointer;
+  background-color: #000;
+}
+
+.minimized-video-card:hover .minimized-video-overlay {
+  background-color: rgba(0, 0, 0, 0.3);
+  opacity: 1; // Fade in the overlay itself
+}
+
+.minimized-video-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: transparent; // Start transparent
+  opacity: 0; // Start invisible
+  transition: background-color 150ms ease-in-out, opacity 150ms ease-in-out;
+  z-index: 5; // Ensure it's above the youtube player iframe
+
+  .btn-icon {
+    color: white;
+    font-size: 1.5rem;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    border: none;
+    background: none;
+  }
+
+  .close-minimized {
+    position: absolute;
+    top: 2px;
+    right: 10px;
+    background-color: rgba(0,0,0,0.5);
+    border-radius: 10%;
+    width: 25px;
+    height: 25px;
+    font-size: 1.2rem; // Adjust size for the small button
+  }
+}
+
+.cdk-drag-preview {
+  box-sizing: border-box;
+  border-radius: 15px;
+
 }
