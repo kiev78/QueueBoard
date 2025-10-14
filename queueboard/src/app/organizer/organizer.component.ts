@@ -6,8 +6,10 @@ import { FormsModule } from '@angular/forms';
 import { YouTubePlayerModule } from '@angular/youtube-player';
 import { YoutubeApiService } from '../services';
 import { environment } from '../../env/environment';
+import { VideoPlayerComponent } from './video-player/video-player.component';
+import { MinimizedVideosComponent } from './minimized-videos/minimized-videos.component';
 
-interface VideoCard {
+export interface VideoCard {
   playlistItemId: string;
   id: string;
   title: string;
@@ -42,7 +44,7 @@ interface PlaylistSort {
 @Component({
   selector: 'app-organizer',
   standalone: true,
-  imports: [CommonModule, RouterModule, DragDropModule, FormsModule, YouTubePlayerModule],
+  imports: [CommonModule, RouterModule, DragDropModule, FormsModule, VideoPlayerComponent, MinimizedVideosComponent],
   templateUrl: './organizer.component.html',
   styleUrls: ['./organizer.component.scss']
 })
@@ -96,7 +98,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   minimizedVideos = signal<VideoCard[]>([]);
   isMinimized = computed(() => this.selectedVideo()?.isMinimized ?? false);
   playerReady = signal(false);
-  currentPlaybackRate = signal(1);
   playerState = signal<YT.PlayerState | null>(null);
   private playerInstances = new Map<string, YT.Player>();
   
@@ -408,7 +409,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     this.minimizedVideos.update(videos => videos.filter(v => v.id !== videoToClose.id));
 
     this.playerReady.set(false);
-    this.currentPlaybackRate.set(1);
     this.playerState.set(null);
   }
 
@@ -476,15 +476,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
   onPlayerStateChange(event: YT.PlayerEvent) {
     this.playerState.set(event.data);
-  }
-
-  setPlaybackRate(speed: number) {
-    this.currentPlaybackRate.set(speed);
-    const video = this.selectedVideo();
-    if (video) {
-      const player = this.playerInstances.get(video.id);
-      player?.setPlaybackRate(speed);
-    }
   }
 
   togglePlayPause(video: VideoCard) {

@@ -1,0 +1,58 @@
+@use '../variables';
+
+.minimized-videos-stack {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 1050;
+}
+
+.minimized-video-card {
+  position: relative;
+  width: 120px;
+  height: 67px;
+  border-radius: var(--border-radius-sm);
+  overflow: hidden;
+  box-shadow: 0 4px 12px var(--color-shadow-dark);
+  cursor: pointer;
+  background-color: var(--color-dark);
+}
+
+.minimized-video-card:hover .minimized-video-overlay {
+  background-color: var(--color-overlay);
+  opacity: 1; // Fade in the overlay itself
+}
+
+.minimized-video-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: transparent; // Start transparent
+  opacity: 0; // Start invisible
+  transition: background-color 150ms ease-in-out, opacity 150ms ease-in-out;
+  z-index: 5; // Ensure it's above the youtube player iframe
+
+  .btn-icon {
+    color: var(--color-light);
+    font-size: 1.5rem;
+    text-shadow: 0 1px 3px var(--color-overlay-dark);
+    border: none;
+    background: none;
+  }
+
+  .close-minimized {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    background-color: var(--color-overlay-dark);
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    font-size: 1rem; // Adjust size for the small button
+  }
+}
