@@ -16,7 +16,7 @@
 </nav>
 
 <div class="organizer-root">
-  <div *ngIf="error()" class="error">Error: {{ error() }}</div>
+  <div *ngIf="error()" class="error" [textContent]="'Error: ' + error()"></div>
   <div class="controls">
     <input placeholder="Search videos, tags or playlists" [(ngModel)]="search" (focus)="onSearchFocus()"
       (click)="onSearchFocus()" />
