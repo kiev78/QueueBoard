@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, signal, computed, inject, PLATFORM_ID } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed, inject, PLATFORM_ID, DestroyRef } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { CdkDragDrop, moveItemInArray, transferArrayItem, DragDropModule } from '@angular/cdk/drag-drop';
@@ -8,6 +8,12 @@ import { YoutubeApiService } from '../services';
 import { environment } from '../../env/environment';
 import { VideoPlayerComponent } from './video-player/video-player.component';
 import { MinimizedVideosComponent } from './minimized-videos/minimized-videos.component';
+import { NormalizedPlaylistVideo, YouTubePlaylist, YouTubePlaylistItem } from '../services/youtube-api.types';
+import { PollingService } from '../services/PollingService';
+import { StorageService } from '../services/StorageService';
+import { ErrorHandlerService } from '../services/ErrorHandlerService';
+import { PlayerManagerService } from '../services/PlayerManagerService';
+import { InputSanitizerService } from '../services/InputSanitizerService';
 
 export interface VideoCard {
   playlistItemId: string;
@@ -46,16 +52,32 @@ interface PlaylistSort {
   standalone: true,
   imports: [CommonModule, RouterModule, DragDropModule, FormsModule, VideoPlayerComponent, MinimizedVideosComponent],
   templateUrl: './organizer.component.html',
-  styleUrls: ['./organizer.component.scss']
+  styleUrls: ['./organizer.component.scss'],
+  providers: [PollingService] // Add component-level provider
 })
 export class OrganizerComponent implements OnInit, OnDestroy {
+   // Inject services
+  private storage = inject(StorageService);
+  private errorHandler = inject(ErrorHandlerService);
+  private playerManager = inject(PlayerManagerService);
+  private polling = inject(PollingService);
+  private sanitizer = inject(InputSanitizerService);
+  private destroyRef = inject(DestroyRef);
+  private _search = signal('');
+  
+  get search(): string {
+    return this._search();
+  }
+  set search(value: string) {
+    this._search.set(this.sanitizer.sanitizeSearchQuery(value));
+  }
+
   playlists = signal<PlaylistColumn[]>([]);
   playlistsSort: PlaylistSort[] = [];
-  search = signal('');
   private preloadedAllVideos = false;
   preloading = signal(false);
   filteredPlaylists = computed(() => {
-    const q = (this.search() || '').trim().toLowerCase();
+    const q = (this.search || '').trim().toLowerCase();
     let filtered = this.playlists();
 
     if (q) {
@@ -122,17 +144,17 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         if (pl.videos && pl.videos.length > 0) continue;
         const { items, nextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, limit);
 
-        const mapped: VideoCard[] = (items as any[]).map((v: any) => ({
-          id: v.videoId,
+        const mapped: VideoCard[] = (items as YouTubePlaylistItem[]).map((v: YouTubePlaylistItem) => ({
+          id: v.contentDetails?.videoId!,
           playlistItemId: v.id,
-          title: v.snippet?.title || v.title || '',
-          description: v.snippet?.description || v.description || '',
-          duration: this.youtube.isoDurationToString(v.contentDetails?.duration || v.duration || ''),
-          thumbnail: v.snippet?.thumbnails?.default?.url || v.thumbnail || '',
-          tags: v.snippet?.tags || v.tags || [],
-          channelTitle: v.snippet?.channelTitle || v.channelTitle || '',
-          publishedAt: v.snippet?.publishedAt || v.publishedAt || '',
-          youtubeUrl: v.youtubeUrl || (v.snippet?.resourceId?.videoId ? `https://www.youtube.com/watch?v=${v.snippet.resourceId.videoId}` : '')
+          title: v.snippet?.title || '',
+          description: v.snippet?.description || '',
+          duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
+          thumbnail: v.snippet?.thumbnails?.default?.url || '',
+          tags: [],
+          channelTitle: v.snippet?.channelTitle || '',
+          publishedAt: v.snippet?.publishedAt || '',
+          youtubeUrl: v.contentDetails?.videoId ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}` : ''
         }));
 
         const curr = [...this.playlists()];
@@ -215,17 +237,17 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
           const { items, nextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, 10);
 
-          const mapped: VideoCard[] = (items as any[]).map((v: any) => ({
-            id: v.videoId,
+          const mapped: VideoCard[] = (items as YouTubePlaylistItem[]).map((v: YouTubePlaylistItem) => ({
+            id: v.contentDetails?.videoId!,
             playlistItemId: v.id,
-            title: v.snippet?.title || v.title || '',
-            description: v.snippet?.description || v.description || '',
-            duration: this.youtube.isoDurationToString(v.contentDetails?.duration || v.duration || ''),
-            thumbnail: v.snippet?.thumbnails?.default?.url || v.thumbnail || '',
-            tags: v.snippet?.tags || v.tags || [],
-            channelTitle: v.snippet?.channelTitle || v.channelTitle || '',
-            publishedAt: v.snippet?.publishedAt || v.publishedAt || '',
-            youtubeUrl: v.youtubeUrl || (v.snippet?.resourceId?.videoId ? `https://www.youtube.com/watch?v=${v.snippet.resourceId.videoId}` : '')
+            title: v.snippet?.title || '',
+            description: v.snippet?.description || '',
+            duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
+            thumbnail: v.snippet?.thumbnails?.default?.url || '',
+            tags: [],
+            channelTitle: v.snippet?.channelTitle || '',
+            publishedAt: v.snippet?.publishedAt || '',
+            youtubeUrl: v.contentDetails?.videoId ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}` : ''
           }));
 
           const curr = [...this.playlists()];
@@ -256,9 +278,9 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     this.connecting.set(true);
     try {
       const { items: newPlaylistItems, nextPageToken } = await this.youtube.fetchPlaylists(undefined, 10);
-      const newPlaylists: PlaylistColumn[] = (newPlaylistItems || []).map((p: any) => ({
+      const newPlaylists: PlaylistColumn[] = (newPlaylistItems || []).map((p: YouTubePlaylist) => ({
         id: p.id,
-        title: p.snippet?.title || p.title || '',
+        title: p.snippet?.title || '',
         description: p.snippet?.description || '',
         color: '#e0e0e0',
         videos: [] as VideoCard[]
@@ -271,17 +293,17 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       for (const pl of newPlaylists) {
         try {
           const { items, nextPageToken: videoNextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, 10);
-          const mapped: VideoCard[] = (items as any[]).map((v: any) => ({
-            id: v.videoId,
+          const mapped: VideoCard[] = (items as YouTubePlaylistItem[]).map((v: YouTubePlaylistItem) => ({
+            id: v.contentDetails?.videoId!,
             playlistItemId: v.id,
-            title: v.snippet?.title || v.title || '',
-            description: v.snippet?.description || v.description || '',
-            duration: this.youtube.isoDurationToString(v.contentDetails?.duration || v.duration || ''),
-            thumbnail: v.snippet?.thumbnails?.default?.url || v.thumbnail || '',
-            tags: v.snippet?.tags || v.tags || [],
-            channelTitle: v.snippet?.channelTitle || v.channelTitle || '',
-            publishedAt: v.snippet?.publishedAt || v.publishedAt || '',
-            youtubeUrl: v.youtubeUrl || (v.snippet?.resourceId?.videoId ? `https://www.youtube.com/watch?v=${v.snippet.resourceId.videoId}` : '')
+            title: v.snippet?.title || '',
+            description: v.snippet?.description || '',
+            duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
+            thumbnail: v.snippet?.thumbnails?.default?.url || '',
+            tags: [],
+            channelTitle: v.snippet?.channelTitle || '',
+            publishedAt: v.snippet?.publishedAt || '',
+            youtubeUrl: v.contentDetails?.videoId ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}` : ''
           }));
 
           this.playlists.update(current => 
@@ -316,17 +338,17 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         try {
           const { items, nextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, 10);
 
-          const mapped: VideoCard[] = (items as any[]).map((v: any) => ({
-            id: v.videoId,
+          const mapped: VideoCard[] = (items as YouTubePlaylistItem[]).map((v: YouTubePlaylistItem) => ({
+            id: v.contentDetails?.videoId!,
             playlistItemId: v.id,
-            title: v.snippet?.title || v.title || '',
-            description: v.snippet?.description || v.description || '',
-            duration: this.youtube.isoDurationToString(v.contentDetails?.duration || v.duration || ''),
-            thumbnail: v.snippet?.thumbnails?.default?.url || v.thumbnail || '',
-            tags: v.snippet?.tags || v.tags || [],
-            channelTitle: v.snippet?.channelTitle || v.channelTitle || '',
-            publishedAt: v.snippet?.publishedAt || v.publishedAt || '',
-            youtubeUrl: v.youtubeUrl || (v.snippet?.resourceId?.videoId ? `https://www.youtube.com/watch?v=${v.snippet.resourceId.videoId}` : '')
+            title: v.snippet?.title || '',
+            description: v.snippet?.description || '',
+            duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
+            thumbnail: v.snippet?.thumbnails?.default?.url || '',
+            tags: [],
+            channelTitle: v.snippet?.channelTitle || '',
+            publishedAt: v.snippet?.publishedAt || '',
+            youtubeUrl: v.contentDetails?.videoId ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}` : ''
           }));
 
           this.playlists.update(current => current.map(p => p.id === pl.id ? { ...p, videos: mapped, nextPageToken } : p));
@@ -350,17 +372,17 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
     try {
       const { items: newVideos, nextPageToken } = await this.youtube.fetchPlaylistItems(playlist.id, 10, playlist.nextPageToken);
-      const mapped: VideoCard[] = (newVideos as any[]).map((v: any) => ({
-        id: v.videoId,
+      const mapped: VideoCard[] = (newVideos as YouTubePlaylistItem[]).map((v: YouTubePlaylistItem) => ({
+        id: v.contentDetails?.videoId!,
         playlistItemId: v.id,
-        title: v.snippet?.title || v.title || '',
-        description: v.snippet?.description || v.description || '',
-        duration: this.youtube.isoDurationToString(v.contentDetails?.duration || v.duration || ''),
-        thumbnail: v.snippet?.thumbnails?.default?.url || v.thumbnail || '',
-        tags: v.snippet?.tags || v.tags || [],
-        channelTitle: v.snippet?.channelTitle || v.channelTitle || '',
-        publishedAt: v.snippet?.publishedAt || v.publishedAt || '',
-        youtubeUrl: v.youtubeUrl || (v.snippet?.resourceId?.videoId ? `https://www.youtube.com/watch?v=${v.snippet.resourceId.videoId}` : '')
+        title: v.snippet?.title || '',
+        description: v.snippet?.description || '',
+        duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
+        thumbnail: v.snippet?.thumbnails?.default?.url || '',
+        tags: [],
+        channelTitle: v.snippet?.channelTitle || '',
+        publishedAt: v.snippet?.publishedAt || '',
+        youtubeUrl: v.contentDetails?.videoId ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}` : ''
       }));
 
       this.playlists.update(currentPlaylists => {
@@ -556,9 +578,9 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
   private async fetchAndMergePlaylists(pageToken?: string, maxResults: number = 10): Promise<{ playlists: PlaylistColumn[], nextPageToken?: string }> {
     const res = await this.youtube.fetchPlaylists(pageToken, maxResults);
-    const fetched: PlaylistColumn[] = (res?.items || []).map((p: any) => ({
+    const fetched: PlaylistColumn[] = (res?.items || []).map((p: YouTubePlaylist) => ({
       id: p.id,
-      title: p.snippet?.title || p.title || '',
+      title: p.snippet?.title || '',
       description: p.snippet?.description || '',
       color: '#e0e0e0',
       videos: [] as VideoCard[]
@@ -567,7 +589,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
     const stored = this.loadState();
     let merged: PlaylistColumn[] = [];
-    const fetchedMap = new Map(fetched.map((f: any) => [f.id, f]));
+    const fetchedMap = new Map(fetched.map((f: PlaylistColumn) => [f.id, f]));
 
     if (stored && stored.length) {
       if (pageToken) {
