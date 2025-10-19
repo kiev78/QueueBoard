@@ -10,7 +10,7 @@ import { VideoPlayerComponent } from './video-player/video-player.component';
 import { MinimizedVideosComponent } from './minimized-videos/minimized-videos.component';
 import { NormalizedPlaylistVideo, YouTubePlaylist, YouTubePlaylistItem } from '../services/youtube-api.types';
 import { PollingService } from '../services/PollingService';
-import { StorageService } from '../services/StorageService';
+import { StorageKey, StorageService } from '../services/StorageService';
 import { ErrorHandlerService } from '../services/ErrorHandlerService';
 import { PlayerManagerService } from '../services/PlayerManagerService';
 import { InputSanitizerService } from '../services/InputSanitizerService';
@@ -56,7 +56,7 @@ interface PlaylistSort {
   providers: [PollingService] // Add component-level provider
 })
 export class OrganizerComponent implements OnInit, OnDestroy {
-   // Inject services
+  // Inject services
   private storage = inject(StorageService);
   private errorHandler = inject(ErrorHandlerService);
   private playerManager = inject(PlayerManagerService);
@@ -64,7 +64,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   private sanitizer = inject(InputSanitizerService);
   private destroyRef = inject(DestroyRef);
   private _search = signal('');
-  
+
   get search(): string {
     return this._search();
   }
@@ -83,27 +83,27 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     if (q) {
       const matchText = (text?: string) => (text || '').toLowerCase().includes(q);
       filtered = this.playlists()
-      .map((pl) => {
-        const videos = (pl.videos || []).filter((v) => {
-          if (matchText(v.title)) return true;
-          if (matchText(v.description)) return true;
-          if (v.tags && v.tags.some((t: string) => matchText(t))) return true;
-          if (matchText(v.channelTitle)) return true;
-          return false;
-        });
+        .map((pl) => {
+          const videos = (pl.videos || []).filter((v) => {
+            if (matchText(v.title)) return true;
+            if (matchText(v.description)) return true;
+            if (v.tags && v.tags.some((t: string) => matchText(t))) return true;
+            if (matchText(v.channelTitle)) return true;
+            return false;
+          });
 
-        const playlistMatches = matchText(pl.title) || matchText(pl.description);
-        if (playlistMatches) {
-          return { ...pl, videos: pl.videos } as PlaylistColumn;
-        }
+          const playlistMatches = matchText(pl.title) || matchText(pl.description);
+          if (playlistMatches) {
+            return { ...pl, videos: pl.videos } as PlaylistColumn;
+          }
 
-        if (videos.length > 0) {
-          return { ...pl, videos } as PlaylistColumn;
-        }
+          if (videos.length > 0) {
+            return { ...pl, videos } as PlaylistColumn;
+          }
 
-        return null;
-      })
-      .filter((x): x is PlaylistColumn => x !== null);
+          return null;
+        })
+        .filter((x): x is PlaylistColumn => x !== null);
     }
 
     if (this.nextPageToken) {
@@ -122,12 +122,12 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   playerReady = signal(false);
   playerState = signal<YT.PlayerState | null>(null);
   private playerInstances = new Map<string, YT.Player>();
-  
+
   private nextPageToken: string | null | undefined = undefined;
   private pollingInterval: any;
   private platformId = inject(PLATFORM_ID);
 
-  constructor(public youtube: YoutubeApiService) {}
+  constructor(public youtube: YoutubeApiService) { }
 
   onSearchFocus() {
     if (this.preloadedAllVideos || this.preloading()) return;
@@ -151,7 +151,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
           description: v.snippet?.description || '',
           duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
           thumbnail: v.snippet?.thumbnails?.default?.url || '',
-          tags: [],
+          tags: v.snippet?.tags || [],
           channelTitle: v.snippet?.channelTitle || '',
           publishedAt: v.snippet?.publishedAt || '',
           youtubeUrl: v.contentDetails?.videoId ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}` : ''
@@ -244,7 +244,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
             description: v.snippet?.description || '',
             duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
             thumbnail: v.snippet?.thumbnails?.default?.url || '',
-            tags: [],
+            tags: v.snippet?.tags || [],
             channelTitle: v.snippet?.channelTitle || '',
             publishedAt: v.snippet?.publishedAt || '',
             youtubeUrl: v.contentDetails?.videoId ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}` : ''
@@ -267,7 +267,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       this.pollingInterval = setInterval(() => this.refresh(), environment.pollingIntervalMinutes * 60 * 1000);
 
     } catch (err: any) {
-      this.error.set(err?.message || String(err)); 
+      this.error.set(err?.message || String(err));
     } finally {
       this.connecting.set(false);
     }
@@ -300,13 +300,13 @@ export class OrganizerComponent implements OnInit, OnDestroy {
             description: v.snippet?.description || '',
             duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
             thumbnail: v.snippet?.thumbnails?.default?.url || '',
-            tags: [],
+            tags: v.snippet?.tags || [],
             channelTitle: v.snippet?.channelTitle || '',
             publishedAt: v.snippet?.publishedAt || '',
             youtubeUrl: v.contentDetails?.videoId ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}` : ''
           }));
 
-          this.playlists.update(current => 
+          this.playlists.update(current =>
             current.map(p => p.id === pl.id ? { ...p, videos: mapped, nextPageToken: videoNextPageToken } : p)
           );
         } catch (e) {
@@ -345,7 +345,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
             description: v.snippet?.description || '',
             duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
             thumbnail: v.snippet?.thumbnails?.default?.url || '',
-            tags: [],
+            tags: v.snippet?.tags || [],
             channelTitle: v.snippet?.channelTitle || '',
             publishedAt: v.snippet?.publishedAt || '',
             youtubeUrl: v.contentDetails?.videoId ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}` : ''
@@ -379,7 +379,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         description: v.snippet?.description || '',
         duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
         thumbnail: v.snippet?.thumbnails?.default?.url || '',
-        tags: [],
+        tags: v.snippet?.tags || [],
         channelTitle: v.snippet?.channelTitle || '',
         publishedAt: v.snippet?.publishedAt || '',
         youtubeUrl: v.contentDetails?.videoId ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}` : ''
@@ -395,7 +395,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         }
         return [...currentPlaylists];
       });
-      
+
       this.saveState();
     } catch (e) {
       console.error('Failed to load more videos for playlist', playlist.id, e);
@@ -482,8 +482,8 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     }
 
     this.playerInstances.set(videoId, player);
-    
-    const video = this.selectedVideo()?.id === videoId 
+
+    const video = this.selectedVideo()?.id === videoId
       ? this.selectedVideo()
       : this.minimizedVideos().find(v => v.id === videoId);
 
@@ -549,12 +549,12 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
   dropPlaylist(event: CdkDragDrop<PlaylistColumn[]>) {
     const arr = [...this.playlists()];
-    moveItemInArray(arr, event.previousIndex, event.currentIndex); 
+    moveItemInArray(arr, event.previousIndex, event.currentIndex);
     arr.forEach((playlist, index) => {
       playlist.sortId = index;
     });
     this.playlistsSort = arr.filter(p => p.id !== 'load-more-sentinel').map(p => ({ id: p.id, sortId: p.sortId! }));
-    this.playlists.set(arr); 
+    this.playlists.set(arr);
     this.saveState();
   }
 
@@ -566,14 +566,10 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     video.detailsVisible = !video.detailsVisible;
   }
 
+
   private saveState(): void {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
-    try {
-      localStorage.setItem('queueboard_state_v1', JSON.stringify(this.playlists())); 
-      localStorage.setItem('queueboard_sort_v1', JSON.stringify(this.playlistsSort));
-    } catch (e) {
-      console.warn('Failed to persist state', e);
-    }
+    this.storage.setItem(StorageKey.STATE, this.playlists());
+    this.storage.setItem(StorageKey.SORT, this.playlistsSort);
   }
 
   private async fetchAndMergePlaylists(pageToken?: string, maxResults: number = 10): Promise<{ playlists: PlaylistColumn[], nextPageToken?: string }> {
@@ -597,7 +593,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       }
 
       merged = stored.map((s) => {
-        const f = fetchedMap.get(s.id); 
+        const f = fetchedMap.get(s.id);
         if (f) {
           return { ...s, title: f.title || s.title, description: f.description || s.description, color: f.color || s.color } as PlaylistColumn;
         }
@@ -617,29 +613,11 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   }
 
   private loadState(): PlaylistColumn[] | null {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return null;
-    try {
-      const raw = localStorage.getItem('queueboard_state_v1');
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed as PlaylistColumn[];
-    } catch (e) {
-      console.warn('Failed to load state', e);
-    }
-    return null;
+    return this.storage.getItem<PlaylistColumn[]>(StorageKey.STATE, null);
   }
 
   private loadSortState(): PlaylistSort[] | null {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return null;
-    try {
-      const raw = localStorage.getItem('queueboard_sort_v1');
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed as PlaylistSort[];
-    } catch (e) {
-      console.warn('Failed to load sort state', e);
-    }
-    return null;
+    return this.storage.getItem<PlaylistSort[]>(StorageKey.SORT, null);
   }
 
   private applySort(playlists: PlaylistColumn[]): PlaylistColumn[] {

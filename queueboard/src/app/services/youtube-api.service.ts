@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { environment } from '../../env/environment';
+import { YouTubeApiResponse, YouTubePlaylistItem } from './youtube-api.types';
 
 declare global {
   interface Window {
@@ -188,8 +189,8 @@ export class YoutubeApiService {
   /**
    * Fetch playlist items and then fetch video details (snippet + contentDetails)
    */
-  async fetchPlaylistItems(playlistId: string, maxResults = 10, pageToken?: string) {
-    if (!this.accessToken) throw new Error('Not authenticated');
+  async fetchPlaylistItems(playlistId: string, maxResults = 10, pageToken?: string) :Promise<YouTubeApiResponse<YouTubePlaylistItem>> {
+        if (!this.accessToken) throw new Error('Not authenticated');
 
     const listRes = await window.gapi.client.youtube.playlistItems.list({
       part: 'id,snippet,contentDetails',
@@ -200,7 +201,7 @@ export class YoutubeApiService {
 
     const items = listRes.result.items || [];
     const videoIds = items
-      .map((it: any) => it.snippet?.resourceId?.videoId)
+      .map((it: YouTubePlaylistItem) => it.snippet?.resourceId?.videoId)
       .filter((v: any) => !!v);
 
     if (videoIds.length === 0) return { items: [], nextPageToken: listRes.result.nextPageToken };
@@ -213,22 +214,17 @@ export class YoutubeApiService {
 
     const videoDetailsMap = new Map<string, YouTubeVideoResource>((vidsRes.result.items || []).map((v: any) => [v.id, v]));
 
-    // Merge playlistItem data (for playlistItemId) with video data (for duration, etc.)
+    // Merge video details (duration, tags) into the playlist item structure.
     const mappedVids = items.map((item: any) => {
       const videoId = item.snippet.resourceId.videoId;
       const videoDetails = videoDetailsMap.get(videoId);
-      return {
-        id: item.id, // This is the playlistItemId
-        videoId: videoId,
-        title: item.snippet.title,
-        description: item.snippet.description,
-        thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url,
-        channelTitle: item.snippet.channelTitle,
-        publishedAt: item.snippet.publishedAt,
-        duration: videoDetails?.contentDetails?.duration, // ISO 8601 duration
-        tags: videoDetails?.snippet?.tags || [],
-        youtubeUrl: `https://youtube.com/watch?v=${videoId}`
-      };
+      if (videoDetails) {
+        // Add duration from the video's contentDetails to the playlistItem's contentDetails.
+        item.contentDetails.duration = videoDetails.contentDetails?.duration;
+        // Add tags from the video's snippet.
+        item.snippet.tags = videoDetails.snippet?.tags;
+      }
+      return item;
     });
 
     return { items: mappedVids, nextPageToken: listRes.result.nextPageToken };

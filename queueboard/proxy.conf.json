@@ -1,0 +1,10 @@
+{
+  "/youtube-api": {
+    "target": "https://www.googleapis.com/youtube/v3",
+    "secure": true,
+    "changeOrigin": true,
+    "pathRewrite": {
+      "^/youtube-api": ""
+    }
+  }
+}

@@ -24,64 +24,7 @@ export interface YouTubeResourceId {
   channelId?: string;
 }
 
-export interface YouTubePlaylistItemSnippet {
-  publishedAt?: string;
-  channelId?: string;
-  title?: string;
-  description?: string;
-  thumbnails?: YouTubeThumbnails;
-  channelTitle?: string;
-  playlistId?: string;
-  position?: number;
-  resourceId?: YouTubeResourceId;
-}
-
-export interface YouTubePlaylistItemContentDetails {
-  videoId?: string;
-  startAt?: string;
-  endAt?: string;
-  note?: string;
-  videoPublishedAt?: string;
-  duration?: string;
-}
-
-export interface YouTubePlaylistItem {
-  kind: 'youtube#playlistItem';
-  etag?: string;
-  id: string;
-  snippet?: YouTubePlaylistItemSnippet;
-  contentDetails?: YouTubePlaylistItemContentDetails;
-}
-
-export interface YouTubeVideoSnippet {
-  publishedAt?: string;
-  channelId?: string;
-  title?: string;
-  description?: string;
-  thumbnails?: YouTubeThumbnails;
-  channelTitle?: string;
-  tags?: string[];
-  categoryId?: string;
-  liveBroadcastContent?: string;
-}
-
-export interface YouTubeVideoContentDetails {
-  duration?: string;
-  dimension?: string;
-  definition?: string;
-  caption?: string;
-  licensedContent?: boolean;
-  projection?: string;
-}
-
-export interface YouTubeVideo {
-  kind: 'youtube#video';
-  etag?: string;
-  id: string;
-  snippet?: YouTubeVideoSnippet;
-  contentDetails?: YouTubeVideoContentDetails;
-}
-
+// Playlist
 export interface YouTubePlaylistSnippet {
   publishedAt?: string;
   channelId?: string;
@@ -100,14 +43,141 @@ export interface YouTubePlaylistContentDetails {
   itemCount?: number;
 }
 
+export interface YouTubePlaylistStatus {
+  privacyStatus?: string;
+}
+
+export interface YouTubePlaylistPlayer {
+  embedHtml?: string;
+}
+
 export interface YouTubePlaylist {
   kind: 'youtube#playlist';
   etag?: string;
   id: string;
   snippet?: YouTubePlaylistSnippet;
+  status?: YouTubePlaylistStatus;
   contentDetails?: YouTubePlaylistContentDetails;
+  player?: YouTubePlaylistPlayer;
+  localizations?: {
+    [key: string]: {
+      title?: string;
+      description?: string;
+    };
+  };
+}
+ 
+
+export interface YouTubePlaylistItemContentDetails {
+  videoId?: string;
+  startAt?: string;
+  endAt?: string;
+  note?: string;
+    duration?: string;
+  videoPublishedAt?: string;
 }
 
+export interface YouTubePlaylistItemStatus {
+  privacyStatus?: string;
+}
+
+export interface YouTubePlaylistItem {
+  kind: 'youtube#playlistItem';
+  etag?: string;
+  id: string;
+  snippet?: YouTubeVideoSnippet;
+  contentDetails?: YouTubeVideoContentDetails;
+  status?: YouTubePlaylistItemStatus;
+}
+
+// Video
+export interface YouTubeVideoSnippet {
+  publishedAt?: string;
+  channelId?: string;
+  title?: string;
+  description?: string;
+  thumbnails?: YouTubeThumbnails;
+  channelTitle?: string;
+  tags?: string[];
+  categoryId?: string;
+  liveBroadcastContent?: string;
+  defaultLanguage?: string;
+  localized?: {
+    title?: string;
+    description?: string;
+  };
+  defaultAudioLanguage?: string;
+  resourceId: YouTubeResourceId;
+}
+
+export interface YouTubeVideoContentDetails {
+  videoId?: string;
+  duration?: string;
+  dimension?: string;
+  definition?: string;
+  caption?: string;
+  licensedContent?: boolean;
+  regionRestriction?: {
+    allowed?: string[];
+    blocked?: string[];
+  };
+  contentRating?: any; // This is a complex object, using any for now
+  projection?: string;
+  hasCustomThumbnail?: boolean;
+}
+
+export interface YouTubeVideoStatus {
+    uploadStatus?: string;
+    failureReason?: string;
+    rejectionReason?: string;
+    privacyStatus?: string;
+    publishAt?: string;
+    license?: string;
+    embeddable?: boolean;
+    publicStatsViewable?: boolean;
+    madeForKids?: boolean;
+    selfDeclaredMadeForKids?: boolean;
+}
+
+export interface YouTubeVideoStatistics {
+    viewCount?: string;
+    likeCount?: string;
+    dislikeCount?: string;
+    favoriteCount?: string;
+    commentCount?: string;
+}
+
+export interface YouTubeVideoPlayer {
+    embedHtml?: string;
+    embedHeight?: number;
+    embedWidth?: number;
+}
+
+export interface YouTubeVideo {
+  kind: 'youtube#video';
+  etag?: string;
+  id: string;
+  snippet?: YouTubeVideoSnippet;
+  contentDetails?: YouTubeVideoContentDetails;
+  status?: YouTubeVideoStatus;
+  statistics?: YouTubeVideoStatistics;
+  player?: YouTubeVideoPlayer;
+}
+
+// Playlist Image
+export interface YouTubePlaylistImage {
+    kind: "youtube#playlistImage",
+    id: string,
+    snippet: {
+        playlistId: string,
+        type: string,
+        width: string,
+        height: string,
+    }
+}
+
+
+// API Response
 export interface YouTubeApiResponse<T> {
   kind?: string;
   etag?: string;
