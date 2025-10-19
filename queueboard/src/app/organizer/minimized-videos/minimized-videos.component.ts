@@ -1,7 +1,7 @@
 import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { YouTubePlayerModule } from '@angular/youtube-player';
-import { VideoCard } from '../organizer.component';
+import { VideoCard } from '../../services/playlist.service';
 
 @Component({
   selector: 'app-minimized-videos',

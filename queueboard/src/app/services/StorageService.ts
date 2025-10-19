@@ -4,12 +4,24 @@ import { isPlatformBrowser } from '@angular/common';
 export enum StorageKey {
   STATE = 'queueboard_state_v1',
   SORT = 'queueboard_sort_v1',
-  GAPI_TOKEN = 'queueboard_gapi_token'
+  GAPI_TOKEN = 'queueboard_gapi_token',
+  NEXT_PAGE_TOKEN = 'queueboard_next_page_token_v1'
 }
 
 /**
- * Safe storage service that handles browser APIs with proper error handling and SSR safety.
- * Prevents QuotaExceededError and serialization issues.
+ * Safe storage service that wraps localStorage with proper error handling and SSR safety.
+ * Prevents QuotaExceededError, serialization errors, and private browsing issues.
+ * 
+ * Usage:
+ * ```ts
+ * // Store data
+ * this.storage.setItem(StorageKey.STATE, this.playlists());
+ * this.storage.setItem(StorageKey.NEXT_PAGE_TOKEN, this.nextPageToken);
+ * 
+ * // Retrieve data
+ * const playlists = this.storage.getItem<PlaylistColumn[]>(StorageKey.STATE);
+ * const nextPageToken = this.storage.getItem<string>(StorageKey.NEXT_PAGE_TOKEN);
+ * ```
  */
 @Injectable({
   providedIn: 'root'
@@ -20,7 +32,8 @@ export class StorageService {
   private readonly MAX_TOTAL_SIZE = 5 * 1024 * 1024; // 5MB total
 
   /**
-   * Safely sets an item in localStorage with size checking and error handling
+   * Safely sets an item in localStorage with size checking and error handling.
+   * Returns true if successful, false otherwise.
    */
   setItem<T>(key: StorageKey, value: T): boolean {
     if (!isPlatformBrowser(this.platformId)) {
@@ -30,10 +43,12 @@ export class StorageService {
     try {
       const serialized = JSON.stringify(value);
 
-      // Validate size
+      // Validate size before attempting to store
       if (!this.validateSize(serialized)) {
-        console.warn(`[StorageService] Item "${key}" exceeds size limit (${serialized.length} bytes)`);
-        // Try to free up space by removing less critical items
+        console.warn(
+          `[StorageService] Item "${key}" exceeds size limit (${serialized.length} bytes)`
+        );
+        // Try to free up space
         this.freeUpSpace(key);
         return false;
       }
@@ -47,7 +62,8 @@ export class StorageService {
   }
 
   /**
-   * Safely retrieves and parses an item from localStorage
+   * Safely retrieves and parses an item from localStorage.
+   * Returns the parsed value or defaultValue if not found or error occurs.
    */
   getItem<T>(key: StorageKey, defaultValue: T | null = null): T | null {
     if (!isPlatformBrowser(this.platformId)) {
@@ -71,7 +87,8 @@ export class StorageService {
   }
 
   /**
-   * Safely removes an item from localStorage
+   * Safely removes an item from localStorage.
+   * Returns true if successful, false otherwise.
    */
   removeItem(key: StorageKey): boolean {
     if (!isPlatformBrowser(this.platformId)) {
@@ -88,7 +105,8 @@ export class StorageService {
   }
 
   /**
-   * Clears all application data from localStorage
+   * Clears all application storage keys.
+   * Returns true if successful, false otherwise.
    */
   clear(): boolean {
     if (!isPlatformBrowser(this.platformId)) {
@@ -96,7 +114,7 @@ export class StorageService {
     }
 
     try {
-      Object.values(StorageKey).forEach(key => {
+      Object.values(StorageKey).forEach((key) => {
         localStorage.removeItem(key);
       });
       return true;
@@ -107,7 +125,7 @@ export class StorageService {
   }
 
   /**
-   * Gets the approximate size of stored data in bytes
+   * Gets the approximate size of all stored application data in bytes.
    */
   getStorageSize(): number {
     if (!isPlatformBrowser(this.platformId)) {
@@ -116,10 +134,11 @@ export class StorageService {
 
     let total = 0;
     try {
-      Object.values(StorageKey).forEach(key => {
+      Object.values(StorageKey).forEach((key) => {
         const item = localStorage.getItem(key);
         if (item) {
-          total += item.length * 2; // UTF-16 uses 2 bytes per character
+          // UTF-16 encoding uses 2 bytes per character
+          total += item.length * 2;
         }
       });
     } catch (error) {
@@ -129,7 +148,26 @@ export class StorageService {
   }
 
   /**
-   * Validates item size against limits
+   * Checks if localStorage is available and accessible.
+   * Useful for detecting private browsing mode and other restrictions.
+   */
+  isAvailable(): boolean {
+    if (!isPlatformBrowser(this.platformId)) {
+      return false;
+    }
+
+    try {
+      const test = '__storage_test__';
+      localStorage.setItem(test, test);
+      localStorage.removeItem(test);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Validates that serialized data doesn't exceed size limits.
    */
   private validateSize(serialized: string): boolean {
     if (serialized.length > this.MAX_ITEM_SIZE) {
@@ -145,19 +183,26 @@ export class StorageService {
   }
 
   /**
-   * Handles storage-specific errors
+   * Handles different types of storage errors with appropriate logging.
    */
   private handleStorageError(error: unknown, operation: string, key: StorageKey): void {
     if (error instanceof DOMException) {
       switch (error.name) {
         case 'QuotaExceededError':
-          console.error(`[StorageService] Quota exceeded during ${operation} on "${key}"`);
+          console.error(
+            `[StorageService] Quota exceeded during ${operation} on "${key}". ` +
+            `Current size: ${this.getStorageSize()} bytes`
+          );
           break;
         case 'SecurityError':
-          console.error(`[StorageService] Security error during ${operation} (possibly private browsing)`);
+          console.error(
+            `[StorageService] Security error during ${operation} (possibly private browsing mode)`
+          );
           break;
         default:
-          console.error(`[StorageService] DOM Exception during ${operation} on "${key}":`, error.name);
+          console.error(
+            `[StorageService] DOM Exception "${error.name}" during ${operation} on "${key}"`
+          );
       }
     } else if (error instanceof SyntaxError) {
       console.error(`[StorageService] JSON parsing error during ${operation} on "${key}"`);
@@ -167,17 +212,24 @@ export class StorageService {
   }
 
   /**
-   * Attempts to free up space by removing less critical items
+   * Attempts to free up space by removing less critical items.
+   * Priority: NEXT_PAGE_TOKEN < SORT < STATE
    */
   private freeUpSpace(failedKey: StorageKey): void {
     console.warn('[StorageService] Attempting to free up localStorage space...');
 
     // Priority order for deletion (least to most important)
-    const keysToRemove = Object.values(StorageKey)
-      .filter(k => k !== failedKey && k !== StorageKey.GAPI_TOKEN)
-      .sort();
+    const priorityOrder: StorageKey[] = [
+      StorageKey.NEXT_PAGE_TOKEN,
+      StorageKey.SORT,
+      StorageKey.STATE,
+    ];
 
-    for (const key of keysToRemove) {
+    for (const key of priorityOrder) {
+      if (key === failedKey || key === StorageKey.GAPI_TOKEN) {
+        continue; // Don't remove the key we're trying to save or auth token
+      }
+
       this.removeItem(key);
 
       // Check if we have space now
@@ -185,7 +237,7 @@ export class StorageService {
         const testData = JSON.stringify({ test: true });
         localStorage.setItem('__test__', testData);
         localStorage.removeItem('__test__');
-        console.log('[StorageService] Successfully freed up space');
+        console.log(`[StorageService] Successfully freed up space by removing "${key}"`);
         return;
       } catch {
         continue; // Still no space, try next key
@@ -193,23 +245,5 @@ export class StorageService {
     }
 
     console.warn('[StorageService] Unable to free up enough space');
-  }
-
-  /**
-   * Checks if localStorage is available
-   */
-  isAvailable(): boolean {
-    if (!isPlatformBrowser(this.platformId)) {
-      return false;
-    }
-
-    try {
-      const test = '__storage_test__';
-      localStorage.setItem(test, test);
-      localStorage.removeItem(test);
-      return true;
-    } catch {
-      return false;
-    }
   }
 }

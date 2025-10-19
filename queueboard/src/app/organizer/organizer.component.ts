@@ -14,38 +14,9 @@ import { StorageKey, StorageService } from '../services/StorageService';
 import { ErrorHandlerService } from '../services/ErrorHandlerService';
 import { PlayerManagerService } from '../services/PlayerManagerService';
 import { InputSanitizerService } from '../services/InputSanitizerService';
+import { PlaylistService, VideoCard, PlaylistColumn } from '../services/playlist.service';
 
-export interface VideoCard {
-  playlistItemId: string;
-  id: string;
-  title: string;
-  description?: string;
-  duration?: string;
-  thumbnail?: string;
-  tags?: string[];
-  channelTitle?: string;
-  publishedAt?: string;
-  youtubeUrl?: string;
-  detailsVisible?: boolean;
-  isMinimized?: boolean;
-  isPlaying?: boolean;
-  resumeTime?: number;
-}
 
-interface PlaylistColumn {
-  id: string;
-  title: string;
-  description?: string;
-  color?: string;
-  videos: VideoCard[];
-  nextPageToken?: string;
-  sortId?: number;
-}
-
-interface PlaylistSort {
-  id: string;
-  sortId: number;
-}
 
 @Component({
   selector: 'app-organizer',
@@ -63,6 +34,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   private polling = inject(PollingService);
   private sanitizer = inject(InputSanitizerService);
   private destroyRef = inject(DestroyRef);
+  private playlistService = inject(PlaylistService);
   private _search = signal('');
 
   get search(): string {
@@ -73,7 +45,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   }
 
   playlists = signal<PlaylistColumn[]>([]);
-  playlistsSort: PlaylistSort[] = [];
   private preloadedAllVideos = false;
   preloading = signal(false);
   filteredPlaylists = computed(() => {
@@ -106,7 +77,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         .filter((x): x is PlaylistColumn => x !== null);
     }
 
-    if (this.nextPageToken) {
+    if (this.playlistService.nextPageToken) {
       return [...filtered, { id: 'load-more-sentinel', title: 'Next', videos: [] }];
     }
     return filtered;
@@ -123,7 +94,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   playerState = signal<YT.PlayerState | null>(null);
   private playerInstances = new Map<string, YT.Player>();
 
-  private nextPageToken: string | null | undefined = undefined;
+
   private pollingInterval: any;
   private platformId = inject(PLATFORM_ID);
 
@@ -132,43 +103,16 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   onSearchFocus() {
     if (this.preloadedAllVideos || this.preloading()) return;
     this.preloading.set(true);
-    this.fetchAllPlaylistItems(25)
+    this.playlistService.fetchAllPlaylistItems(this.playlists())
+      .then(updatedPlaylists => {
+        this.playlists.set(updatedPlaylists);
+        this.preloadedAllVideos = true;
+      })
       .catch((e) => console.error('Failed to preload playlist items', e))
       .finally(() => this.preloading.set(false));
   }
 
-  private async fetchAllPlaylistItems(limit = 25) {
-    const pls = [...this.playlists()];
-    for (const pl of pls) {
-      try {
-        if (pl.videos && pl.videos.length > 0) continue;
-        const { items, nextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, limit);
 
-        const mapped: VideoCard[] = (items as YouTubePlaylistItem[]).map((v: YouTubePlaylistItem) => ({
-          id: v.contentDetails?.videoId!,
-          playlistItemId: v.id,
-          title: v.snippet?.title || '',
-          description: v.snippet?.description || '',
-          duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
-          thumbnail: v.snippet?.thumbnails?.default?.url || '',
-          tags: v.snippet?.tags || [],
-          channelTitle: v.snippet?.channelTitle || '',
-          publishedAt: v.snippet?.publishedAt || '',
-          youtubeUrl: v.contentDetails?.videoId ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}` : ''
-        }));
-
-        const curr = [...this.playlists()];
-        const idx = curr.findIndex(x => x.id === pl.id);
-        if (idx >= 0) {
-          curr[idx] = { ...curr[idx], videos: mapped, nextPageToken };
-          this.playlists.set(curr);
-        }
-      } catch (e) {
-        console.error('Failed to preload playlist items for', pl.id, e);
-      }
-    }
-    this.preloadedAllVideos = true;
-  }
 
   ngOnInit(): void {
     // Load YouTube IFrame API
@@ -178,15 +122,15 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       document.body.appendChild(tag);
     }
 
-    const saved = this.loadState();
+    const saved = this.playlistService.loadState();
     if (saved) {
       // Apply saved sort order from the full state
-      this.playlistsSort = saved.filter(p => p.sortId !== undefined).map(p => ({ id: p.id, sortId: p.sortId! }));
-      this.playlists.set(this.applySort(saved));
+      this.playlistService.playlistsSort = saved.filter(p => p.sortId !== undefined).map(p => ({ id: p.id, sortId: p.sortId! }));
+      this.playlists.set(this.playlistService.applySort(saved));
     } else {
       // Fallback to loading just the sort state if full state is missing
-      const savedSort = this.loadSortState();
-      if (savedSort) this.playlistsSort = savedSort;
+      const savedSort = this.playlistService.loadSortState();
+      if (savedSort) this.playlistService.playlistsSort = savedSort;
       this.playlists.set([
         {
           id: 'loading',
@@ -225,9 +169,9 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         return;
       }
 
-      const { playlists, nextPageToken } = await this.fetchAndMergePlaylists(undefined, 10);
+      const { playlists, nextPageToken } = await this.playlistService.fetchAndMergePlaylists(undefined, 10);
       this.playlists.set(playlists);
-      this.nextPageToken = nextPageToken;
+      this.playlistService.nextPageToken = nextPageToken;
 
       for (const pl of this.playlists()) {
         try {
@@ -286,8 +230,8 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         videos: [] as VideoCard[]
       }));
 
-      this.playlists.set(this.applySort(newPlaylists));
-      this.nextPageToken = nextPageToken;
+      this.playlists.set(this.playlistService.applySort(newPlaylists));
+      this.playlistService.nextPageToken = nextPageToken;
       this.preloadedAllVideos = false;
 
       for (const pl of newPlaylists) {
@@ -324,15 +268,15 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   }
 
   async fetchMorePlaylists() {
-    if (this.loadingMore() || !this.nextPageToken) {
+    if (this.loadingMore() || !this.playlistService.nextPageToken) {
       return;
     }
 
     this.loadingMore.set(true);
     try {
-      const { playlists: newPlaylists, nextPageToken } = await this.fetchAndMergePlaylists(this.nextPageToken, 10);
+      const { playlists: newPlaylists, nextPageToken } = await this.playlistService.fetchAndMergePlaylists(this.playlistService.nextPageToken, 10);
       this.playlists.update(current => [...current, ...newPlaylists]);
-      this.nextPageToken = nextPageToken;
+      this.playlistService.nextPageToken = nextPageToken;
 
       for (const pl of newPlaylists) {
         try {
@@ -361,7 +305,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       this.saveState();
     } catch (err: any) {
       this.error.set(err?.message || String(err));
-      this.nextPageToken = null;
+      this.playlistService.nextPageToken = null;
     } finally {
       this.loadingMore.set(false);
     }
@@ -371,26 +315,10 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     if (!playlist.nextPageToken) return;
 
     try {
-      const { items: newVideos, nextPageToken } = await this.youtube.fetchPlaylistItems(playlist.id, 10, playlist.nextPageToken);
-      const mapped: VideoCard[] = (newVideos as YouTubePlaylistItem[]).map((v: YouTubePlaylistItem) => ({
-        id: v.contentDetails?.videoId!,
-        playlistItemId: v.id,
-        title: v.snippet?.title || '',
-        description: v.snippet?.description || '',
-        duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
-        thumbnail: v.snippet?.thumbnails?.default?.url || '',
-        tags: v.snippet?.tags || [],
-        channelTitle: v.snippet?.channelTitle || '',
-        publishedAt: v.snippet?.publishedAt || '',
-        youtubeUrl: v.contentDetails?.videoId ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}` : ''
-      }));
-
+      const updatedPlaylist = await this.playlistService.loadMoreVideos(playlist);
       this.playlists.update(currentPlaylists => {
         const plIndex = currentPlaylists.findIndex(p => p.id === playlist.id);
         if (plIndex > -1) {
-          const updatedPlaylist = { ...currentPlaylists[plIndex] };
-          updatedPlaylist.videos = [...updatedPlaylist.videos, ...mapped];
-          updatedPlaylist.nextPageToken = nextPageToken;
           currentPlaylists[plIndex] = updatedPlaylist;
         }
         return [...currentPlaylists];
@@ -553,9 +481,8 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     arr.forEach((playlist, index) => {
       playlist.sortId = index;
     });
-    this.playlistsSort = arr.filter(p => p.id !== 'load-more-sentinel').map(p => ({ id: p.id, sortId: p.sortId! }));
+    this.playlistService.playlistsSort = arr.filter(p => p.id !== 'load-more-sentinel').map(p => ({ id: p.id, sortId: p.sortId! }));
     this.playlists.set(arr);
-    this.saveState();
   }
 
   trackById(index: number, item: any) {
@@ -569,63 +496,10 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
   private saveState(): void {
     this.storage.setItem(StorageKey.STATE, this.playlists());
-    this.storage.setItem(StorageKey.SORT, this.playlistsSort);
+    this.storage.setItem(StorageKey.SORT, this.playlistService.playlistsSort);
+    this.storage.setItem(StorageKey.NEXT_PAGE_TOKEN, this.playlistService.nextPageToken);
+  
   }
 
-  private async fetchAndMergePlaylists(pageToken?: string, maxResults: number = 10): Promise<{ playlists: PlaylistColumn[], nextPageToken?: string }> {
-    const res = await this.youtube.fetchPlaylists(pageToken, maxResults);
-    const fetched: PlaylistColumn[] = (res?.items || []).map((p: YouTubePlaylist) => ({
-      id: p.id,
-      title: p.snippet?.title || '',
-      description: p.snippet?.description || '',
-      color: '#e0e0e0',
-      videos: [] as VideoCard[]
-    }));
-    const nextPageToken = res?.nextPageToken;
 
-    const stored = this.loadState();
-    let merged: PlaylistColumn[] = [];
-    const fetchedMap = new Map(fetched.map((f: PlaylistColumn) => [f.id, f]));
-
-    if (stored && stored.length) {
-      if (pageToken) {
-        return { playlists: fetched, nextPageToken };
-      }
-
-      merged = stored.map((s) => {
-        const f = fetchedMap.get(s.id);
-        if (f) {
-          return { ...s, title: f.title || s.title, description: f.description || s.description, color: f.color || s.color } as PlaylistColumn;
-        }
-        return s;
-      });
-
-      for (const f of fetched) {
-        if (!merged.find((m) => m.id === f.id)) {
-          merged.unshift(f);
-        }
-      }
-    } else {
-      merged = fetched;
-    }
-
-    return { playlists: this.applySort(merged), nextPageToken };
-  }
-
-  private loadState(): PlaylistColumn[] | null {
-    return this.storage.getItem<PlaylistColumn[]>(StorageKey.STATE, null);
-  }
-
-  private loadSortState(): PlaylistSort[] | null {
-    return this.storage.getItem<PlaylistSort[]>(StorageKey.SORT, null);
-  }
-
-  private applySort(playlists: PlaylistColumn[]): PlaylistColumn[] {
-    if (this.playlistsSort.length === 0) return playlists;
-    const sortMap = new Map(this.playlistsSort.map(s => [s.id, s.sortId]));
-    playlists.forEach(p => {
-      p.sortId = sortMap.get(p.id);
-    });
-    return playlists.sort((a, b) => (a.sortId ?? Infinity) - (b.sortId ?? Infinity));
-  }
 }
