@@ -12,6 +12,29 @@
   display: flex;
   gap: 0.5rem;
   margin-bottom: 1rem;
+  align-items: center;
+}
+
+.controls input {
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--border-radius-md);
+  border: 1px solid rgba(0,0,0,0.08);
+  min-width: 260px;
+  flex: 1;
+}
+
+.sort-dropdown {
+  min-width: 200px;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--border-radius-md);
+  border: 1px solid rgba(0,0,0,0.08);
+  background-color: white;
+  font-size: 0.9rem;
+}
+
+.sort-dropdown:disabled {
+  background-color: #f8f9fa;
+  opacity: 0.6;
 }
 
 .board {
@@ -210,13 +233,6 @@
   z-index: 6;
 }
 
-.controls input {
-  padding: 0.5rem 0.75rem;
-  border-radius: var(--border-radius-md);
-  border: 1px solid rgba(0,0,0,0.08);
-  min-width: 260px;
-}
-
 :host {
   display: block;
   overflow-x: auto;
@@ -228,8 +244,17 @@
     gap: 0.75rem;
   }
 
+  .controls {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
   .controls input { 
     min-width: 160px; 
+  }
+
+  .sort-dropdown {
+    min-width: 160px;
   }
 }
 

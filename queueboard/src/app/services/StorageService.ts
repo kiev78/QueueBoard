@@ -5,26 +5,27 @@ export enum StorageKey {
   STATE = 'queueboard_state_v1',
   SORT = 'queueboard_sort_v1',
   GAPI_TOKEN = 'queueboard_gapi_token',
-  NEXT_PAGE_TOKEN = 'queueboard_next_page_token_v1'
+  NEXT_PAGE_TOKEN = 'queueboard_next_page_token_v1',
+  PLAYLIST_SORT_ORDER = 'queueboard_playlist_sort_order_v1',
 }
 
 /**
  * Safe storage service that wraps localStorage with proper error handling and SSR safety.
  * Prevents QuotaExceededError, serialization errors, and private browsing issues.
- * 
+ *
  * Usage:
  * ```ts
  * // Store data
  * this.storage.setItem(StorageKey.STATE, this.playlists());
  * this.storage.setItem(StorageKey.NEXT_PAGE_TOKEN, this.nextPageToken);
- * 
+ *
  * // Retrieve data
  * const playlists = this.storage.getItem<PlaylistColumn[]>(StorageKey.STATE);
  * const nextPageToken = this.storage.getItem<string>(StorageKey.NEXT_PAGE_TOKEN);
  * ```
  */
 @Injectable({
-  providedIn: 'root'
+  providedIn: 'root',
 })
 export class StorageService {
   private platformId = inject(PLATFORM_ID);
@@ -191,7 +192,7 @@ export class StorageService {
         case 'QuotaExceededError':
           console.error(
             `[StorageService] Quota exceeded during ${operation} on "${key}". ` +
-            `Current size: ${this.getStorageSize()} bytes`
+              `Current size: ${this.getStorageSize()} bytes`
           );
           break;
         case 'SecurityError':

@@ -1,30 +1,59 @@
-import { Component, OnInit, OnDestroy, signal, computed, inject, PLATFORM_ID, DestroyRef } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  OnDestroy,
+  signal,
+  computed,
+  inject,
+  PLATFORM_ID,
+  DestroyRef,
+} from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { RouterModule } from '@angular/router';
-import { CdkDragDrop, moveItemInArray, transferArrayItem, DragDropModule } from '@angular/cdk/drag-drop';
+import {
+  CdkDragDrop,
+  moveItemInArray,
+  transferArrayItem,
+  DragDropModule,
+} from '@angular/cdk/drag-drop';
 import { FormsModule } from '@angular/forms';
 import { YouTubePlayerModule } from '@angular/youtube-player';
 import { YoutubeApiService } from '../services';
 import { environment } from '../../env/environment';
 import { VideoPlayerComponent } from './video-player/video-player.component';
 import { MinimizedVideosComponent } from './minimized-videos/minimized-videos.component';
-import { NormalizedPlaylistVideo, YouTubePlaylist, YouTubePlaylistItem } from '../services/youtube-api.types';
+import {
+  NormalizedPlaylistVideo,
+  YouTubePlaylist,
+  YouTubePlaylistItem,
+} from '../services/youtube-api.types';
 import { PollingService } from '../services/PollingService';
 import { StorageKey, StorageService } from '../services/StorageService';
 import { ErrorHandlerService } from '../services/ErrorHandlerService';
 import { PlayerManagerService } from '../services/PlayerManagerService';
 import { InputSanitizerService } from '../services/InputSanitizerService';
-import { PlaylistService, VideoCard, PlaylistColumn } from '../services/playlist.service';
-
-
+import {
+  PlaylistService,
+  VideoCard,
+  PlaylistColumn,
+  PlaylistSortOrder,
+  PlaylistSortOption,
+} from '../services/playlist.service';
 
 @Component({
   selector: 'app-organizer',
   standalone: true,
-  imports: [CommonModule, RouterModule, DragDropModule, FormsModule, VideoPlayerComponent, MinimizedVideosComponent],
+  imports: [
+    CommonModule,
+    RouterModule,
+    DragDropModule,
+    FormsModule,
+    VideoPlayerComponent,
+    MinimizedVideosComponent,
+  ],
   templateUrl: './organizer.component.html',
   styleUrls: ['./organizer.component.scss'],
-  providers: [PollingService] // Add component-level provider
+  providers: [PollingService], // Add component-level provider
 })
 export class OrganizerComponent implements OnInit, OnDestroy {
   // Inject services
@@ -77,15 +106,25 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         .filter((x): x is PlaylistColumn => x !== null);
     }
 
+    // Pagination UI removed - "Load More" sentinel disabled
+    // TODO: Re-enable by uncommenting the following block when pagination is restored:
+    /*
     if (this.playlistService.nextPageToken) {
       return [...filtered, { id: 'load-more-sentinel', title: 'Next', videos: [] }];
     }
+    */
     return filtered;
   });
-  hasPlaylists = computed(() => this.playlists().length > 0 && this.playlists()[0]?.id !== 'loading');
+  hasPlaylists = computed(
+    () => this.playlists().length > 0 && this.playlists()[0]?.id !== 'loading'
+  );
   connecting = signal(false);
   error = signal<string | null>(null);
   loadingMore = signal(false);
+
+  // Sort-related properties
+  currentSortOrder = signal<PlaylistSortOrder>(PlaylistSortOrder.LAST_UPDATED);
+  sortOptions: PlaylistSortOption[] = [];
 
   selectedVideo = signal<VideoCard | null>(null);
   minimizedVideos = signal<VideoCard[]>([]);
@@ -94,25 +133,23 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   playerState = signal<YT.PlayerState | null>(null);
   private playerInstances = new Map<string, YT.Player>();
 
-
   private pollingInterval: any;
   private platformId = inject(PLATFORM_ID);
 
-  constructor(public youtube: YoutubeApiService) { }
+  constructor(public youtube: YoutubeApiService) {}
 
   onSearchFocus() {
     if (this.preloadedAllVideos || this.preloading()) return;
     this.preloading.set(true);
-    this.playlistService.fetchAllPlaylistItems(this.playlists())
-      .then(updatedPlaylists => {
+    this.playlistService
+      .fetchAllPlaylistItems(this.playlists())
+      .then((updatedPlaylists) => {
         this.playlists.set(updatedPlaylists);
         this.preloadedAllVideos = true;
       })
       .catch((e) => console.error('Failed to preload playlist items', e))
       .finally(() => this.preloading.set(false));
   }
-
-
 
   ngOnInit(): void {
     // Load YouTube IFrame API
@@ -122,10 +159,18 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       document.body.appendChild(tag);
     }
 
+    // Initialize sort options and load saved sort order
+    this.sortOptions = this.playlistService.sortOptions;
+    const savedSortOrder = this.playlistService.loadSortOrder();
+    this.currentSortOrder.set(savedSortOrder);
+    this.playlistService.currentSortOrder = savedSortOrder;
+
     const saved = this.playlistService.loadState();
     if (saved) {
       // Apply saved sort order from the full state
-      this.playlistService.playlistsSort = saved.filter(p => p.sortId !== undefined).map(p => ({ id: p.id, sortId: p.sortId! }));
+      this.playlistService.playlistsSort = saved
+        .filter((p) => p.sortId !== undefined)
+        .map((p) => ({ id: p.id, sortId: p.sortId! }));
       this.playlists.set(this.playlistService.applySort(saved));
     } else {
       // Fallback to loading just the sort state if full state is missing
@@ -144,10 +189,10 @@ export class OrganizerComponent implements OnInit, OnDestroy {
               youtubeUrl: '',
               thumbnail: '',
               description: 'Loading...',
-              playlistItemId: 'spinner-item'
-            }
-          ]
-        }
+              playlistItemId: 'spinner-item',
+            },
+          ],
+        },
       ]);
     }
   }
@@ -169,9 +214,12 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         return;
       }
 
-      const { playlists, nextPageToken } = await this.playlistService.fetchAndMergePlaylists(undefined, 10);
+      // Fetch all playlists at once - pagination disabled
+      // TODO: Re-enable pagination by passing pageToken and reducing maxResults
+      const { playlists } = await this.playlistService.fetchAndMergePlaylists(undefined, 50);
       this.playlists.set(playlists);
-      this.playlistService.nextPageToken = nextPageToken;
+      // nextPageToken tracking disabled for now
+      this.playlistService.nextPageToken = undefined; // nextPageToken
 
       for (const pl of this.playlists()) {
         try {
@@ -179,25 +227,32 @@ export class OrganizerComponent implements OnInit, OnDestroy {
             continue;
           }
 
-          const { items, nextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, 10);
+          // Fetch all videos at once - pagination disabled
+          // TODO: Re-enable pagination by reducing limit and using nextPageToken
+          const { items } = await this.youtube.fetchPlaylistItems(pl.id, 50);
 
-          const mapped: VideoCard[] = (items as YouTubePlaylistItem[]).map((v: YouTubePlaylistItem) => ({
-            id: v.contentDetails?.videoId!,
-            playlistItemId: v.id,
-            title: v.snippet?.title || '',
-            description: v.snippet?.description || '',
-            duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
-            thumbnail: v.snippet?.thumbnails?.default?.url || '',
-            tags: v.snippet?.tags || [],
-            channelTitle: v.snippet?.channelTitle || '',
-            publishedAt: v.snippet?.publishedAt || '',
-            youtubeUrl: v.contentDetails?.videoId ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}` : ''
-          }));
+          const mapped: VideoCard[] = (items as YouTubePlaylistItem[]).map(
+            (v: YouTubePlaylistItem) => ({
+              id: v.contentDetails?.videoId!,
+              playlistItemId: v.id,
+              title: v.snippet?.title || '',
+              description: v.snippet?.description || '',
+              duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
+              thumbnail: v.snippet?.thumbnails?.default?.url || '',
+              tags: v.snippet?.tags || [],
+              channelTitle: v.snippet?.channelTitle || '',
+              publishedAt: v.snippet?.publishedAt || '',
+              youtubeUrl: v.contentDetails?.videoId
+                ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}`
+                : '',
+            })
+          );
 
           const curr = [...this.playlists()];
-          const idx = curr.findIndex(x => x.id === pl.id);
+          const idx = curr.findIndex((x) => x.id === pl.id);
           if (idx >= 0) {
-            curr[idx] = { ...curr[idx], videos: mapped, nextPageToken };
+            // nextPageToken scaffolding kept for future use
+            curr[idx] = { ...curr[idx], videos: mapped }; // , nextPageToken (disabled)
             this.playlists.set(curr);
           }
         } catch (e) {
@@ -208,8 +263,10 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       this.saveState();
 
       if (this.pollingInterval) clearInterval(this.pollingInterval);
-      this.pollingInterval = setInterval(() => this.refresh(), environment.pollingIntervalMinutes * 60 * 1000);
-
+      this.pollingInterval = setInterval(
+        () => this.refresh(),
+        environment.pollingIntervalMinutes * 60 * 1000
+      );
     } catch (err: any) {
       this.error.set(err?.message || String(err));
     } finally {
@@ -221,37 +278,46 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     this.error.set(null);
     this.connecting.set(true);
     try {
-      const { items: newPlaylistItems, nextPageToken } = await this.youtube.fetchPlaylists(undefined, 10);
+      // Fetch all playlists at once - pagination disabled
+      // TODO: Re-enable pagination by passing pageToken and reducing maxResults
+      const { items: newPlaylistItems } = await this.youtube.fetchPlaylists(undefined, 50);
       const newPlaylists: PlaylistColumn[] = (newPlaylistItems || []).map((p: YouTubePlaylist) => ({
         id: p.id,
         title: p.snippet?.title || '',
         description: p.snippet?.description || '',
         color: '#e0e0e0',
-        videos: [] as VideoCard[]
+        videos: [] as VideoCard[],
       }));
 
       this.playlists.set(this.playlistService.applySort(newPlaylists));
-      this.playlistService.nextPageToken = nextPageToken;
+      // nextPageToken tracking disabled for now
+      this.playlistService.nextPageToken = undefined; // nextPageToken
       this.preloadedAllVideos = false;
 
       for (const pl of newPlaylists) {
         try {
-          const { items, nextPageToken: videoNextPageToken } = await this.youtube.fetchPlaylistItems(pl.id, 10);
-          const mapped: VideoCard[] = (items as YouTubePlaylistItem[]).map((v: YouTubePlaylistItem) => ({
-            id: v.contentDetails?.videoId!,
-            playlistItemId: v.id,
-            title: v.snippet?.title || '',
-            description: v.snippet?.description || '',
-            duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
-            thumbnail: v.snippet?.thumbnails?.default?.url || '',
-            tags: v.snippet?.tags || [],
-            channelTitle: v.snippet?.channelTitle || '',
-            publishedAt: v.snippet?.publishedAt || '',
-            youtubeUrl: v.contentDetails?.videoId ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}` : ''
-          }));
+          // Fetch all videos at once - pagination disabled
+          // TODO: Re-enable pagination by reducing limit and using nextPageToken
+          const { items } = await this.youtube.fetchPlaylistItems(pl.id, 50);
+          const mapped: VideoCard[] = (items as YouTubePlaylistItem[]).map(
+            (v: YouTubePlaylistItem) => ({
+              id: v.contentDetails?.videoId!,
+              playlistItemId: v.id,
+              title: v.snippet?.title || '',
+              description: v.snippet?.description || '',
+              duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
+              thumbnail: v.snippet?.thumbnails?.default?.url || '',
+              tags: v.snippet?.tags || [],
+              channelTitle: v.snippet?.channelTitle || '',
+              publishedAt: v.snippet?.publishedAt || '',
+              youtubeUrl: v.contentDetails?.videoId
+                ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}`
+                : '',
+            })
+          );
 
-          this.playlists.update(current =>
-            current.map(p => p.id === pl.id ? { ...p, videos: mapped, nextPageToken: videoNextPageToken } : p)
+          this.playlists.update(
+            (current) => current.map((p) => (p.id === pl.id ? { ...p, videos: mapped } : p)) // nextPageToken disabled
           );
         } catch (e) {
           console.error('Failed to load playlist items for', pl.id, e);
@@ -259,7 +325,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       }
 
       this.saveState();
-
     } catch (err: any) {
       this.error.set(err?.message || String(err));
     } finally {
@@ -268,6 +333,14 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   }
 
   async fetchMorePlaylists() {
+    // Pagination disabled - this method is kept for future use
+    // TODO: Re-enable by checking nextPageToken and using it for pagination
+    console.log(
+      'FetchMorePlaylists disabled - pagination removed. All playlists are loaded initially.'
+    );
+    return;
+
+    /* Commented out pagination logic - restore when needed:
     if (this.loadingMore() || !this.playlistService.nextPageToken) {
       return;
     }
@@ -309,9 +382,16 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     } finally {
       this.loadingMore.set(false);
     }
+    */
   }
 
   async loadMoreVideos(playlist: PlaylistColumn) {
+    // Pagination disabled - this method is kept for future use
+    // TODO: Re-enable by checking playlist.nextPageToken and using it for pagination
+    console.log('LoadMoreVideos disabled - pagination removed. All videos are loaded initially.');
+    return;
+
+    /* Commented out pagination logic - restore when needed:
     if (!playlist.nextPageToken) return;
 
     try {
@@ -328,6 +408,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     } catch (e) {
       console.error('Failed to load more videos for playlist', playlist.id, e);
     }
+    */
   }
 
   openVideo(v: VideoCard) {
@@ -337,7 +418,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     }
 
     // If the clicked video was in the minimized list, remove it.
-    this.minimizedVideos.update(videos => videos.filter(vid => vid.id !== v.id));
+    this.minimizedVideos.update((videos) => videos.filter((vid) => vid.id !== v.id));
 
     this.selectedVideo.set(v);
     this.playerReady.set(false);
@@ -356,7 +437,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     }
 
     // Remove from minimized list
-    this.minimizedVideos.update(videos => videos.filter(v => v.id !== videoToClose.id));
+    this.minimizedVideos.update((videos) => videos.filter((v) => v.id !== videoToClose.id));
 
     this.playerReady.set(false);
     this.playerState.set(null);
@@ -375,8 +456,8 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       resumeTime: currentTime,
     };
 
-    this.minimizedVideos.update(videos => {
-      if (videos.some(v => v.id === minimizedVideo.id)) {
+    this.minimizedVideos.update((videos) => {
+      if (videos.some((v) => v.id === minimizedVideo.id)) {
         return videos;
       }
       return [...videos, minimizedVideo];
@@ -391,8 +472,8 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   restoreVideo(video: VideoCard) {
     if (this.selectedVideo()?.id === video.id) {
       // It's already the selected one, just un-minimize
-      this.selectedVideo.update(v => ({ ...v!, isMinimized: false }));
-      this.minimizedVideos.update(videos => videos.filter(v => v.id !== video.id));
+      this.selectedVideo.update((v) => ({ ...v!, isMinimized: false }));
+      this.minimizedVideos.update((videos) => videos.filter((v) => v.id !== video.id));
     } else {
       // A different video is being restored, so open it
       this.openVideo(video);
@@ -411,9 +492,10 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
     this.playerInstances.set(videoId, player);
 
-    const video = this.selectedVideo()?.id === videoId
-      ? this.selectedVideo()
-      : this.minimizedVideos().find(v => v.id === videoId);
+    const video =
+      this.selectedVideo()?.id === videoId
+        ? this.selectedVideo()
+        : this.minimizedVideos().find((v) => v.id === videoId);
 
     const startSeconds = Math.floor(video?.resumeTime ?? 0);
 
@@ -459,7 +541,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         event.currentIndex
       );
 
-      this.syncMove(videoToMove, sourcePlaylistId, destPlaylistId).catch(err => {
+      this.syncMove(videoToMove, sourcePlaylistId, destPlaylistId).catch((err) => {
         console.error('Failed to sync video move with YouTube:', err);
         this.error.set(`Failed to move video: ${err.message || String(err)}`);
       });
@@ -481,7 +563,9 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     arr.forEach((playlist, index) => {
       playlist.sortId = index;
     });
-    this.playlistService.playlistsSort = arr.filter(p => p.id !== 'load-more-sentinel').map(p => ({ id: p.id, sortId: p.sortId! }));
+    this.playlistService.playlistsSort = arr
+      .filter((p) => p.id !== 'load-more-sentinel')
+      .map((p) => ({ id: p.id, sortId: p.sortId! }));
     this.playlists.set(arr);
   }
 
@@ -493,13 +577,24 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     video.detailsVisible = !video.detailsVisible;
   }
 
+  onSortOrderChange(sortOrder: PlaylistSortOrder) {
+    this.currentSortOrder.set(sortOrder);
+    this.playlistService.saveSortOrder(sortOrder);
+
+    // Re-apply sorting to current playlists
+    const currentPlaylists = this.playlists();
+    const sortedPlaylists = this.playlistService.applySort(currentPlaylists);
+    this.playlists.set(sortedPlaylists);
+
+    // Save the updated state
+    this.saveState();
+  }
 
   private saveState(): void {
     this.storage.setItem(StorageKey.STATE, this.playlists());
     this.storage.setItem(StorageKey.SORT, this.playlistService.playlistsSort);
-    this.storage.setItem(StorageKey.NEXT_PAGE_TOKEN, this.playlistService.nextPageToken);
-  
+    // nextPageToken storage disabled since pagination is removed
+    // TODO: Re-enable when pagination is restored:
+    // this.storage.setItem(StorageKey.NEXT_PAGE_TOKEN, this.playlistService.nextPageToken);
   }
-
-
 }

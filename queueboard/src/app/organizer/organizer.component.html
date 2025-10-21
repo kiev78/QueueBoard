@@ -2,15 +2,32 @@
   <div class="container-fluid">
     <span class="navbar-brand">QueueBoard — Organizer</span>
     <div class="ms-auto d-flex gap-2 align-items-center">
-      <button *ngIf="!hasPlaylists() || !youtube.isAuthenticated()" class="btn btn-outline-light" (click)="connectYouTube()" [disabled]="connecting()">
+      <button
+        *ngIf="!hasPlaylists() || !youtube.isAuthenticated()"
+        class="btn btn-outline-light"
+        (click)="connectYouTube()"
+        [disabled]="connecting()"
+      >
         <span *ngIf="!connecting()" class="me-1">☁️</span>
         <span *ngIf="connecting()" class="me-1">⏳</span>
         Connect YouTube
-      </button>   
-       
-      <button class="btn btn-secondary" *ngIf="hasPlaylists() &&  youtube.isAuthenticated()" (click)="refresh()" [disabled]="connecting()">Refresh</button>
-      <button class="btn btn-light text-danger" *ngIf="youtube.isAuthenticated() && !connecting()"
-        (click)="youtube.signOut(); playlists.set([]);">Sign Out</button>
+      </button>
+
+      <button
+        class="btn btn-secondary"
+        *ngIf="hasPlaylists() && youtube.isAuthenticated()"
+        (click)="refresh()"
+        [disabled]="connecting()"
+      >
+        Refresh
+      </button>
+      <button
+        class="btn btn-light text-danger"
+        *ngIf="youtube.isAuthenticated() && !connecting()"
+        (click)="youtube.signOut(); playlists.set([])"
+      >
+        Sign Out
+      </button>
     </div>
   </div>
 </nav>
@@ -18,34 +35,92 @@
 <div class="organizer-root">
   <div *ngIf="error()" class="error" [textContent]="'Error: ' + error()"></div>
   <div class="controls">
-    <input placeholder="Search videos, tags or playlists" [(ngModel)]="search" (focus)="onSearchFocus()"
-      (click)="onSearchFocus()" />
+    <input
+      placeholder="Search videos, tags or playlists"
+      [(ngModel)]="search"
+      (focus)="onSearchFocus()"
+      (click)="onSearchFocus()"
+    />
+
+    <select
+      class="form-select sort-dropdown"
+      [ngModel]="currentSortOrder()"
+      (ngModelChange)="onSortOrderChange($event)"
+      [disabled]="!hasPlaylists()"
+      title="Sort playlists"
+    >
+      <option *ngFor="let option of sortOptions" [value]="option.value">
+        {{ option.label }}
+      </option>
+    </select>
   </div>
 
-  <div class="board" cdkDropListOrientation="horizontal" cdkDropListGroup (cdkDropListDropped)="dropPlaylist($event)"
-    cdkDropList [cdkDropListData]="filteredPlaylists()">
-    <div class="column" *ngFor="let playlist of filteredPlaylists(); trackBy: trackById"
-      [style.borderTopColor]="playlist.color" [class.load-more-column]="playlist.id === 'load-more-sentinel'">
+  <div
+    class="board"
+    cdkDropListOrientation="horizontal"
+    cdkDropListGroup
+    (cdkDropListDropped)="dropPlaylist($event)"
+    cdkDropList
+    [cdkDropListData]="filteredPlaylists()"
+  >
+    <div
+      class="column"
+      *ngFor="let playlist of filteredPlaylists(); trackBy: trackById"
+      [style.borderTopColor]="playlist.color"
+      [class.load-more-column]="playlist.id === 'load-more-sentinel'"
+    >
       <!-- Regular Playlist Column -->
       <ng-container *ngIf="playlist.id !== 'load-more-sentinel'">
         <div class="card playlist-card" cdkDrag>
           <div class="card-header">
-            <div class="fw-bold">{{ playlist.title }}
-            <span class="text-muted small">{{ playlist.videos.length }} videos</span></div>
+            <div class="fw-bold">
+              {{ playlist.title }}
+              <span class="text-muted small">{{ playlist.videos.length }} videos</span>
+            </div>
           </div>
           <div class="card-body">
-            <div class="video-list" cdkDropList [id]="playlist.id" [cdkDropListData]="playlist.videos"
-              (cdkDropListDropped)="drop($event)">
+            <div
+              class="video-list"
+              cdkDropList
+              [id]="playlist.id"
+              [cdkDropListData]="playlist.videos"
+              (cdkDropListDropped)="drop($event)"
+            >
               <div class="video-card" *ngFor="let v of playlist.videos; trackBy: trackById" cdkDrag>
                 <div class="video-main">
-                  <img *ngIf="v.thumbnail" [src]="v.thumbnail" alt="thumb" (click)="openVideo(v)" role="button"
-                    tabindex="0" (keydown.enter)="openVideo(v)" [attr.aria-label]="'Play ' + (v.title || 'video')" [title]="'Play ' + (v.title || 'video')" />
-                  <div class="meta" (click)="toggleDetails(v)" role="button" tabindex="0" (keydown.enter)="toggleDetails(v)"
-                    [attr.aria-expanded]="v.detailsVisible" [attr.aria-controls]="'Toggle details-' + v.id" [title]="'Details ' + (v.title || 'video')">
-                    <div class="title" [title]="'Details ' + (v.title || 'video')">{{ v.title }}</div>
+                  <img
+                    *ngIf="v.thumbnail"
+                    [src]="v.thumbnail"
+                    alt="thumb"
+                    (click)="openVideo(v)"
+                    role="button"
+                    tabindex="0"
+                    (keydown.enter)="openVideo(v)"
+                    [attr.aria-label]="'Play ' + (v.title || 'video')"
+                    [title]="'Play ' + (v.title || 'video')"
+                  />
+                  <div
+                    class="meta"
+                    (click)="toggleDetails(v)"
+                    role="button"
+                    tabindex="0"
+                    (keydown.enter)="toggleDetails(v)"
+                    [attr.aria-expanded]="v.detailsVisible"
+                    [attr.aria-controls]="'Toggle details-' + v.id"
+                    [title]="'Details ' + (v.title || 'video')"
+                  >
+                    <div class="title" [title]="'Details ' + (v.title || 'video')">
+                      {{ v.title }}
+                    </div>
                     <div class="duration">{{ v.duration }}</div>
                   </div>
-                  <a class="open" [href]="v.youtubeUrl" target="_blank" rel="noopener" aria-label="Open in new">
+                  <a
+                    class="open"
+                    [href]="v.youtubeUrl"
+                    target="_blank"
+                    rel="noopener"
+                    aria-label="Open in new"
+                  >
                     🔗
                   </a>
                 </div>
@@ -53,23 +128,25 @@
                 <div class="video-details" [class.expanded]="v.detailsVisible">
                   <div class="desc">{{ v.description }}</div>
                   <div class="actions">
-                    <button class="btn btn-primary play-btn" (click)="openVideo(v)">
-                      ▶️ Play
-                    </button>
+                    <button class="btn btn-primary play-btn" (click)="openVideo(v)">▶️ Play</button>
                   </div>
                 </div>
               </div>
-              <!-- Load more videos button -->
+              <!-- Load more videos button - DISABLED (pagination removed) -->
+              <!-- TODO: Re-enable when pagination is restored -->
+              <!--
               <div *ngIf="playlist.nextPageToken" class="load-more-videos-container">
                 <button class="btn btn-sm btn-outline-primary" (click)="loadMoreVideos(playlist)">Load More</button>
               </div>
+              -->
             </div>
           </div>
         </div>
-
       </ng-container>
 
-      <!-- "Load More" Column -->
+      <!-- "Load More" Column - DISABLED (pagination removed) -->
+      <!-- TODO: Re-enable when pagination is restored -->
+      <!--
       <ng-container *ngIf="playlist.id === 'load-more-sentinel'">
         <div class="card load-more-card">
           <button class="btn btn-primary w-100 h-100" (click)="fetchMorePlaylists()" [disabled]="loadingMore()">
@@ -78,10 +155,13 @@
           </button>
         </div>
       </ng-container>
+      -->
     </div>
   </div>
 
-  <div *ngIf="filteredPlaylists().length === 0" class="no-results">No playlists or videos match your search.</div>
+  <div *ngIf="filteredPlaylists().length === 0" class="no-results">
+    No playlists or videos match your search.
+  </div>
 
   <!-- Overlay player with Angular YouTube Player -->
   <app-video-player
@@ -90,7 +170,8 @@
     (closePlayer)="closeVideo()"
     (minimizePlayer)="minimizeVideo()"
     (playerReady)="onPlayerReady($event)"
-    (stateChange)="onPlayerStateChange($event)">
+    (stateChange)="onPlayerStateChange($event)"
+  >
   </app-video-player>
 
   <!-- Minimized Videos Stack -->
@@ -101,7 +182,7 @@
     (close)="closeVideo($event)"
     (togglePlayPause)="togglePlayPause($event)"
     (playerReady)="onPlayerReady($event)"
-    (stateChange)="onPlayerStateChange($event)">
+    (stateChange)="onPlayerStateChange($event)"
+  >
   </app-minimized-videos>
-  
 </div>

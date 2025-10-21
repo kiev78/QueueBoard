@@ -31,10 +31,14 @@ export class YoutubeApiService {
   async load(): Promise<void> {
     // Validate developer-supplied credentials to avoid unclear errors from the Google APIs
     if (!this.clientId || this.clientId.includes('YOUR') || this.clientId.includes('<')) {
-      throw new Error('Google OAuth Client ID is not set. Please set environment.googleClientId in src/environments/environment.ts (no angle brackets).');
+      throw new Error(
+        'Google OAuth Client ID is not set. Please set environment.googleClientId in src/environments/environment.ts (no angle brackets).'
+      );
     }
     if (!this.apiKey || this.apiKey.includes('YOUR') || this.apiKey.includes('<')) {
-      throw new Error('Google API Key is not set. Please set environment.googleApiKey in src/environments/environment.ts (no angle brackets) and enable the YouTube Data API v3.');
+      throw new Error(
+        'Google API Key is not set. Please set environment.googleApiKey in src/environments/environment.ts (no angle brackets) and enable the YouTube Data API v3.'
+      );
     }
 
     await Promise.all([this.loadGapi(), this.loadGis()]);
@@ -114,19 +118,24 @@ export class YoutubeApiService {
             const expiresIn = resp.expires_in ? Number(resp.expires_in) : 3600;
             const expiresAt = Date.now() + expiresIn * 1000;
             try {
-              sessionStorage.setItem(this.tokenStorageKey, JSON.stringify({ accessToken: this.accessToken, expiresAt }));
+              sessionStorage.setItem(
+                this.tokenStorageKey,
+                JSON.stringify({ accessToken: this.accessToken, expiresAt })
+              );
             } catch (e) {
               console.warn('Failed to persist token to sessionStorage', e);
             }
             // set on gapi client
-            try { window.gapi.client.setToken({ access_token: this.accessToken }); } catch (e) {}
+            try {
+              window.gapi.client.setToken({ access_token: this.accessToken });
+            } catch (e) {}
             callback(this.accessToken);
           } else {
             this.accessToken = null;
             sessionStorage.removeItem(this.tokenStorageKey);
             callback(null);
           }
-        }
+        },
       });
     }
     return this.tokenClient;
@@ -137,7 +146,9 @@ export class YoutubeApiService {
     const stored = this.getStoredToken();
     if (stored) {
       this.accessToken = stored.accessToken;
-      try { window.gapi.client.setToken({ access_token: this.accessToken }); } catch (e) {}
+      try {
+        window.gapi.client.setToken({ access_token: this.accessToken });
+      } catch (e) {}
       return Promise.resolve(this.accessToken);
     }
 
@@ -167,20 +178,26 @@ export class YoutubeApiService {
 
   signOut() {
     this.accessToken = null;
-    try { sessionStorage.removeItem(this.tokenStorageKey); } catch (e) {}
-    try { if (window?.gapi?.client) window.gapi.client.setToken(null); } catch (e) {}
+    try {
+      sessionStorage.removeItem(this.tokenStorageKey);
+    } catch (e) {}
+    try {
+      if (window?.gapi?.client) window.gapi.client.setToken(null);
+    } catch (e) {}
   }
 
   isAuthenticated(): boolean {
     return !!this.accessToken;
   }
 
-  async fetchPlaylists(pageToken?: string, maxResults = 10) {
+  async fetchPlaylists(pageToken?: string, maxResults = 50) {
     if (!this.accessToken) throw new Error('Not authenticated');
-    const params: any = { mine: true, maxResults, pageToken };
+    // Fetch all playlists by setting a high maxResults
+    // TODO: Re-enable pagination by uncommenting pageToken usage and reducing maxResults
+    const params: any = { mine: true, maxResults }; // , pageToken (disabled for now)
     const res = await window.gapi.client.youtube.playlists.list({
       part: 'id,snippet,contentDetails',
-      ...params
+      ...params,
     });
 
     return { ...res.result, items: res.result.items || [] };
@@ -189,14 +206,19 @@ export class YoutubeApiService {
   /**
    * Fetch playlist items and then fetch video details (snippet + contentDetails)
    */
-  async fetchPlaylistItems(playlistId: string, maxResults = 10, pageToken?: string) :Promise<YouTubeApiResponse<YouTubePlaylistItem>> {
-        if (!this.accessToken) throw new Error('Not authenticated');
+  async fetchPlaylistItems(
+    playlistId: string,
+    maxResults = 50,
+    pageToken?: string
+  ): Promise<YouTubeApiResponse<YouTubePlaylistItem>> {
+    if (!this.accessToken) throw new Error('Not authenticated');
 
+    // Fetch all videos by setting a high maxResults
+    // TODO: Re-enable pagination by uncommenting pageToken and reducing maxResults
     const listRes = await window.gapi.client.youtube.playlistItems.list({
       part: 'id,snippet,contentDetails',
       playlistId,
-      maxResults,
-      pageToken
+      maxResults, // , pageToken (disabled for now)
     });
 
     const items = listRes.result.items || [];
@@ -209,10 +231,12 @@ export class YoutubeApiService {
     const vidsRes = await window.gapi.client.youtube.videos.list({
       part: 'snippet,contentDetails',
       id: videoIds.join(','),
-      maxResults: videoIds.length
+      maxResults: videoIds.length,
     });
 
-    const videoDetailsMap = new Map<string, YouTubeVideoResource>((vidsRes.result.items || []).map((v: any) => [v.id, v]));
+    const videoDetailsMap = new Map<string, YouTubeVideoResource>(
+      (vidsRes.result.items || []).map((v: any) => [v.id, v])
+    );
 
     // Merge video details (duration, tags) into the playlist item structure.
     const mappedVids = items.map((item: any) => {
@@ -235,8 +259,8 @@ export class YoutubeApiService {
     const response = await window.gapi.client.youtube.playlistItems.insert({
       part: 'snippet',
       resource: {
-        snippet: { playlistId, resourceId: { kind: 'youtube#video', videoId } }
-      }
+        snippet: { playlistId, resourceId: { kind: 'youtube#video', videoId } },
+      },
     });
     return response.result;
   }
