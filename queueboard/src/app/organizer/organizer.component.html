@@ -33,11 +33,46 @@
 </nav>
 
 <div class="organizer-root">
+  @if(!hasPlaylists()){
+  <!-- Welcome screen shown when no playlists are loaded and not in loading placeholder -->
+  <div class="welcome-screen">
+    <div class="welcome-card card">
+      <div class="card-body text-center">
+        <h2 class="card-title">Welcome to QueueBoard</h2>
+        <p class="lead">
+          Organize and play your YouTube playlists. Drag and drop videos between playlists, search
+          across titles, descriptions and tags, and minimize videos while continuing to browse.
+        </p>
+        <ul class="feature-list list-unstyled">
+          <li>• Import your YouTube playlists</li>
+          <li>• Reorder videos with drag & drop</li>
+          <li>• Minimize videos and resume playback</li>
+          <li>• Search and filter across playlists and video metadata</li>
+        </ul>
+
+        <div class="mt-3">
+          <button
+            class="btn btn-primary btn-lg"
+            (click)="connectYouTube()"
+            [disabled]="connecting()"
+          >
+            <span *ngIf="!connecting()">Connect YouTube</span>
+            <span *ngIf="connecting()">Connecting…</span>
+          </button>
+        </div>
+        <div class="mt-2 text-muted small">
+          We only request readonly access to your YouTube playlists.
+        </div>
+      </div>
+    </div>
+  </div>
+  }@else{
   <div *ngIf="error()" class="error" [textContent]="'Error: ' + error()"></div>
   <div class="controls">
     <input
       placeholder="Search videos, tags or playlists"
       [(ngModel)]="search"
+      [disabled]="!hasPlaylists()"
       (focus)="onSearchFocus()"
       (click)="onSearchFocus()"
     />
@@ -185,4 +220,5 @@
     (stateChange)="onPlayerStateChange($event)"
   >
   </app-minimized-videos>
+  }
 </div>

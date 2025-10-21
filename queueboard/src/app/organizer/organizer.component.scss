@@ -339,3 +339,30 @@
   border-radius: var(--border-radius-lg);
 
 }
+
+/* Welcome screen styles */
+.welcome-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+
+.welcome-card {
+  max-width: 760px;
+  width: 100%;
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+.feature-list {
+  margin: 0.5rem 0 1rem 0;
+  padding: 0;
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 720px) {
+  .welcome-card { padding: 1rem; }
+  .welcome-screen { padding: 1rem 0.5rem; }
+}

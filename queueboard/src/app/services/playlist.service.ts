@@ -27,18 +27,22 @@ export interface PlaylistColumn {
   color?: string;
   videos: VideoCard[];
   nextPageToken?: string;
-  sortId?: number;
+  sortId?: number; // This will be set from PlaylistSort during sorting
 }
 
 export interface PlaylistSort {
   id: string;
   sortId: number;
+  publishedAt?: string; // YouTube's original playlist creation date
+  dateAddedToApp?: string; // When playlist was first added to our app
+  lastModifiedInApp?: string; // When playlist was last modified in our app
 }
 
 export enum PlaylistSortOrder {
   LAST_UPDATED = 'last_updated',
   DATE_ADDED = 'date_added',
   ALPHABETICAL = 'alphabetical',
+  YOUTUBE_CREATED = 'youtube_created',
 }
 
 export interface PlaylistSortOption {
@@ -57,8 +61,9 @@ export class PlaylistService {
 
   // Available sort options
   public readonly sortOptions: PlaylistSortOption[] = [
-    { value: PlaylistSortOrder.LAST_UPDATED, label: 'Last Updated (Default)' },
-    { value: PlaylistSortOrder.DATE_ADDED, label: 'Date Added' },
+    { value: PlaylistSortOrder.LAST_UPDATED, label: 'Last Modified in App' },
+    { value: PlaylistSortOrder.DATE_ADDED, label: 'Added to App (Newest First)' },
+    { value: PlaylistSortOrder.YOUTUBE_CREATED, label: 'Created on YouTube (Newest First)' },
     { value: PlaylistSortOrder.ALPHABETICAL, label: 'Alphabetical' },
   ];
 
@@ -112,6 +117,7 @@ export class PlaylistService {
     // Fetch all playlists at once - pageToken and pagination disabled for now
     // TODO: Re-enable pagination by using pageToken parameter and reducing maxResults
     const res = await this.youtube.fetchPlaylists(undefined, maxResults); // pageToken disabled
+    const currentTime = new Date().toISOString();
     const fetched: PlaylistColumn[] = (res?.items || []).map((p: YouTubePlaylist) => ({
       id: p.id,
       title: p.snippet?.title || '',
@@ -123,28 +129,26 @@ export class PlaylistService {
     const nextPageToken = undefined; // res?.nextPageToken (disabled)
 
     const stored = this.loadState();
+    const storedSort = this.loadSortState() || [];
     let merged: PlaylistColumn[] = [];
     const fetchedMap = new Map(fetched.map((f: PlaylistColumn) => [f.id, f]));
 
     if (stored && stored.length) {
-      // Skip pagination logic when pageToken is provided for now
-      // if (pageToken) {
-      //   return { playlists: fetched, nextPageToken };
-      // }
-
       merged = stored.map((s) => {
         const f = fetchedMap.get(s.id);
         if (f) {
+          // Playlist exists in both stored and fetched - merge
           return {
             ...s,
             title: f.title || s.title,
             description: f.description || s.description,
-            color: f.color || s.color,
+            color: s.color || f.color, // Prefer stored color
           } as PlaylistColumn;
         }
         return s;
       });
 
+      // Add new playlists (not in stored data)
       for (const f of fetched) {
         if (!merged.find((m) => m.id === f.id)) {
           merged.unshift(f);
@@ -154,11 +158,110 @@ export class PlaylistService {
       merged = fetched;
     }
 
+    // Update sort data with YouTube metadata and handle new playlists
+    this.updateSortDataWithYouTubeInfo(merged, res?.items || [], storedSort);
+
     return { playlists: this.applySort(merged), nextPageToken };
   }
 
+  private updateSortDataWithYouTubeInfo(
+    playlists: PlaylistColumn[],
+    youtubeItems: any[],
+    storedSort: PlaylistSort[]
+  ): void {
+    const currentTime = new Date().toISOString();
+    const updatedSort: PlaylistSort[] = [...storedSort];
+    const sortMap = new Map(updatedSort.map((s) => [s.id, s]));
+
+    for (const playlist of playlists) {
+      const youtubeData = youtubeItems.find((p: any) => p.id === playlist.id);
+      const existingSort = sortMap.get(playlist.id);
+
+      if (existingSort) {
+        // Update existing sort entry with YouTube data if changed
+        const hasChanges =
+          youtubeData &&
+          (youtubeData.snippet?.title !== playlist.title ||
+            youtubeData.snippet?.description !== playlist.description);
+
+        existingSort.publishedAt = youtubeData?.snippet?.publishedAt || existingSort.publishedAt;
+        if (hasChanges) {
+          existingSort.lastModifiedInApp = currentTime;
+        }
+      } else {
+        // New playlist - create sort entry
+        const newSort: PlaylistSort = {
+          id: playlist.id,
+          sortId: updatedSort.length,
+          publishedAt: youtubeData?.snippet?.publishedAt,
+          dateAddedToApp: currentTime,
+          lastModifiedInApp: currentTime,
+        };
+        updatedSort.push(newSort);
+        sortMap.set(playlist.id, newSort);
+      }
+    }
+
+    // Save updated sort data
+    this.playlistsSort = updatedSort;
+    this.storage.setItem(StorageKey.SORT, updatedSort);
+  }
+
   public loadState(): PlaylistColumn[] | null {
-    return this.storage.getItem<PlaylistColumn[]>(StorageKey.STATE, null);
+    const playlists = this.storage.getItem<PlaylistColumn[]>(StorageKey.STATE, null);
+
+    // Check if we need to migrate old data to the sort format
+    if (playlists && playlists.length > 0) {
+      const currentTime = new Date().toISOString();
+      const storedSort = this.loadSortState() || [];
+      const sortMap = new Map(storedSort.map((s) => [s.id, s]));
+
+      // Check if any playlists don't have sort entries or have old date fields
+      const needsMigration = playlists.some(
+        (p) =>
+          !sortMap.has(p.id) ||
+          (p as any).dateAdded ||
+          (p as any).lastUpdated ||
+          (p as any).publishedAt
+      );
+
+      if (needsMigration) {
+        const migratedSort: PlaylistSort[] = [...storedSort];
+
+        playlists.forEach((playlist, index) => {
+          if (!sortMap.has(playlist.id)) {
+            // Create new sort entry for this playlist
+            migratedSort.push({
+              id: playlist.id,
+              sortId: index,
+              publishedAt: (playlist as any).publishedAt,
+              dateAddedToApp: (playlist as any).dateAdded || currentTime,
+              lastModifiedInApp: (playlist as any).lastUpdated || currentTime,
+            });
+          }
+        });
+
+        // Save the migrated sort data
+        this.storage.setItem(StorageKey.SORT, migratedSort);
+        this.playlistsSort = migratedSort;
+
+        // Clean the playlist data of old date fields
+        const cleanedPlaylists = playlists.map((p) => ({
+          id: p.id,
+          title: p.title,
+          description: p.description,
+          color: p.color,
+          videos: p.videos,
+          nextPageToken: p.nextPageToken,
+          sortId: p.sortId,
+        }));
+
+        this.storage.setItem(StorageKey.STATE, cleanedPlaylists);
+        return cleanedPlaylists;
+      }
+    }
+
+    return playlists;
   }
 
   public loadSortState(): PlaylistSort[] | null {
@@ -201,24 +304,99 @@ export class PlaylistService {
 
   public applySort(playlists: PlaylistColumn[]): PlaylistColumn[] {
     const sortedPlaylists = [...playlists];
+    const sortMap = new Map(this.playlistsSort.map((s) => [s.id, s]));
 
     switch (this.currentSortOrder) {
       case PlaylistSortOrder.ALPHABETICAL:
-        return sortedPlaylists.sort((a, b) => a.title.localeCompare(b.title));
+        const alphabetical = sortedPlaylists.sort((a, b) => a.title.localeCompare(b.title));
+        // Update sortId to match new order
+        this.updateSortIdsAfterSorting(alphabetical);
+        return alphabetical;
 
       case PlaylistSortOrder.DATE_ADDED:
-        // Use manual sort order if available, otherwise use YouTube's default order
-        if (this.playlistsSort.length === 0) return sortedPlaylists;
-        const sortMap = new Map(this.playlistsSort.map((s) => [s.id, s.sortId]));
-        playlists.forEach((p) => {
-          p.sortId = sortMap.get(p.id);
+        // Sort by dateAddedToApp from sort data (newest first), fallback to title
+        const byDateAdded = sortedPlaylists.sort((a, b) => {
+          const sortA = sortMap.get(a.id);
+          const sortB = sortMap.get(b.id);
+          const dateA = sortA?.dateAddedToApp ? new Date(sortA.dateAddedToApp).getTime() : 0;
+          const dateB = sortB?.dateAddedToApp ? new Date(sortB.dateAddedToApp).getTime() : 0;
+          if (dateA === dateB) {
+            return a.title.localeCompare(b.title);
+          }
+          return dateB - dateA; // Newest first
         });
-        return sortedPlaylists.sort((a, b) => (a.sortId ?? Infinity) - (b.sortId ?? Infinity));
+        this.updateSortIdsAfterSorting(byDateAdded);
+        return byDateAdded;
+
+      case PlaylistSortOrder.YOUTUBE_CREATED:
+        // Sort by YouTube's publishedAt from sort data (newest first), fallback to title
+        const byYouTubeCreated = sortedPlaylists.sort((a, b) => {
+          const sortA = sortMap.get(a.id);
+          const sortB = sortMap.get(b.id);
+          const dateA = sortA?.publishedAt ? new Date(sortA.publishedAt).getTime() : 0;
+          const dateB = sortB?.publishedAt ? new Date(sortB.publishedAt).getTime() : 0;
+          if (dateA === dateB) {
+            return a.title.localeCompare(b.title);
+          }
+          return dateB - dateA; // Newest first
+        });
+        this.updateSortIdsAfterSorting(byYouTubeCreated);
+        return byYouTubeCreated;
 
       case PlaylistSortOrder.LAST_UPDATED:
       default:
-        // Default YouTube API order (most recently updated first)
-        return sortedPlaylists;
+        // Sort by lastModifiedInApp from sort data (most recently modified first), fallback to title
+        const byLastModified = sortedPlaylists.sort((a, b) => {
+          const sortA = sortMap.get(a.id);
+          const sortB = sortMap.get(b.id);
+          const dateA = sortA?.lastModifiedInApp ? new Date(sortA.lastModifiedInApp).getTime() : 0;
+          const dateB = sortB?.lastModifiedInApp ? new Date(sortB.lastModifiedInApp).getTime() : 0;
+          if (dateA === dateB) {
+            return a.title.localeCompare(b.title);
+          }
+          return dateB - dateA; // Most recently modified first
+        });
+        this.updateSortIdsAfterSorting(byLastModified);
+        return byLastModified;
+    }
+  }
+
+  private updateSortIdsAfterSorting(sortedPlaylists: PlaylistColumn[]): void {
+    // Update both the sort data and the playlist sortId to match the new order
+    sortedPlaylists.forEach((playlist, index) => {
+      playlist.sortId = index;
+      const sortEntry = this.playlistsSort.find((s) => s.id === playlist.id);
+      if (sortEntry) {
+        sortEntry.sortId = index;
+      }
+    });
+
+    // Save the updated sort order
+    this.storage.setItem(StorageKey.SORT, this.playlistsSort);
+  }
+
+  public updatePlaylistModified(playlistId: string): void {
+    const sortEntry = this.playlistsSort.find((s) => s.id === playlistId);
+    if (sortEntry) {
+      sortEntry.lastModifiedInApp = new Date().toISOString();
+      this.storage.setItem(StorageKey.SORT, this.playlistsSort);
+    }
+  }
+
+  public updateMultiplePlaylistsModified(playlistIds: string[]): void {
+    const currentTime = new Date().toISOString();
+    let updated = false;
+
+    playlistIds.forEach((playlistId) => {
+      const sortEntry = this.playlistsSort.find((s) => s.id === playlistId);
+      if (sortEntry) {
+        sortEntry.lastModifiedInApp = currentTime;
+        updated = true;
+      }
+    });
+
+    if (updated) {
+      this.storage.setItem(StorageKey.SORT, this.playlistsSort);
     }
   }
 

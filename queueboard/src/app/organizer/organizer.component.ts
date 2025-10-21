@@ -267,9 +267,14 @@ export class OrganizerComponent implements OnInit, OnDestroy {
           const curr = [...this.playlists()];
           const idx = curr.findIndex((x) => x.id === pl.id);
           if (idx >= 0) {
-            // nextPageToken scaffolding kept for future use
-            curr[idx] = { ...curr[idx], videos: mapped }; // , nextPageToken (disabled)
+            // Update playlist with videos and mark as modified
+            curr[idx] = {
+              ...curr[idx],
+              videos: mapped,
+            };
             this.playlists.set(curr);
+            // Update the lastModifiedInApp timestamp in sort data
+            this.playlistService.updatePlaylistModified(pl.id);
           }
         } catch (e) {
           console.error('Failed to load playlist items for', pl.id, e);
@@ -294,30 +299,27 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     this.error.set(null);
     this.connecting.set(true);
     try {
-      // Fetch all playlists at once - pagination disabled
-      // TODO: Re-enable pagination by passing pageToken and reducing maxResults
-      const { items: newPlaylistItems } = await this.youtube.fetchPlaylists(undefined, 50);
-      const newPlaylists: PlaylistColumn[] = (newPlaylistItems || []).map((p: YouTubePlaylist) => ({
-        id: p.id,
-        title: p.snippet?.title || '',
-        description: p.snippet?.description || '',
-        color: '#e0e0e0',
-        videos: [] as VideoCard[],
-      }));
+      // Use the same merge logic as connectYouTube to maintain date tracking
+      const { playlists } = await this.playlistService.fetchAndMergePlaylists(undefined, 50);
 
-      // Apply current sort order and update manual sort
-      const sortedPlaylists = this.playlistService.applySort(newPlaylists);
-      this.playlistService.initializeManualSortFromPlaylists(sortedPlaylists);
+      // Apply current sort order and initialize manual sort if needed
+      const sortedPlaylists = this.playlistService.applySort(playlists);
+      if (this.playlistService.playlistsSort.length === 0) {
+        this.playlistService.initializeManualSortFromPlaylists(sortedPlaylists);
+      }
 
       this.playlists.set(sortedPlaylists);
       // nextPageToken tracking disabled for now
-      this.playlistService.nextPageToken = undefined; // nextPageToken
+      this.playlistService.nextPageToken = undefined;
       this.preloadedAllVideos = false;
 
-      for (const pl of newPlaylists) {
+      for (const pl of this.playlists()) {
         try {
+          if (pl.videos && pl.videos.length > 0) {
+            continue;
+          }
+
           // Fetch all videos at once - pagination disabled
-          // TODO: Re-enable pagination by reducing limit and using nextPageToken
           const { items } = await this.youtube.fetchPlaylistItems(pl.id, 50);
           const mapped: VideoCard[] = (items as YouTubePlaylistItem[]).map(
             (v: YouTubePlaylistItem) => ({
@@ -336,15 +338,25 @@ export class OrganizerComponent implements OnInit, OnDestroy {
             })
           );
 
-          this.playlists.update(
-            (current) => current.map((p) => (p.id === pl.id ? { ...p, videos: mapped } : p)) // nextPageToken disabled
-          );
+          const curr = [...this.playlists()];
+          const idx = curr.findIndex((x) => x.id === pl.id);
+          if (idx >= 0) {
+            // Update playlist with videos and mark as modified
+            curr[idx] = {
+              ...curr[idx],
+              videos: mapped,
+            };
+            this.playlists.set(curr);
+            // Update the lastModifiedInApp timestamp in sort data
+            this.playlistService.updatePlaylistModified(pl.id);
+          }
         } catch (e) {
           console.error('Failed to load playlist items for', pl.id, e);
         }
       }
 
       this.saveState();
+      this.connecting.set(false);
     } catch (err: any) {
       this.error.set(err?.message || String(err));
     } finally {
@@ -547,8 +559,14 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   drop(event: CdkDragDrop<VideoCard[]>) {
     if (!event.previousContainer || !event.container) return;
 
+    const currentTime = new Date().toISOString();
+    const curr = [...this.playlists()];
+
     if (event.previousContainer === event.container) {
+      // Moving within same playlist - update lastModifiedInApp
       moveItemInArray(event.container.data, event.previousIndex, event.currentIndex);
+      // Update the lastModifiedInApp timestamp in sort data
+      this.playlistService.updatePlaylistModified(event.container.id);
     } else {
       const videoToMove = event.previousContainer.data[event.previousIndex];
       const sourcePlaylistId = event.previousContainer.id;
@@ -560,6 +578,9 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         event.previousIndex,
         event.currentIndex
       );
+
+      // Update lastModifiedInApp for both source and destination playlists
+      this.playlistService.updateMultiplePlaylistsModified([sourcePlaylistId, destPlaylistId]);
 
       this.syncMove(videoToMove, sourcePlaylistId, destPlaylistId).catch((err) => {
         console.error('Failed to sync video move with YouTube:', err);
