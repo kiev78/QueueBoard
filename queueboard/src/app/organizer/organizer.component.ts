@@ -166,16 +166,25 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     this.playlistService.currentSortOrder = savedSortOrder;
 
     const saved = this.playlistService.loadState();
+    const savedManualSort = this.playlistService.loadSortState();
+
     if (saved) {
-      // Apply saved sort order from the full state
-      this.playlistService.playlistsSort = saved
-        .filter((p) => p.sortId !== undefined)
-        .map((p) => ({ id: p.id, sortId: p.sortId! }));
-      this.playlists.set(this.playlistService.applySort(saved));
+      // Load manual sort order if available
+      if (savedManualSort && savedManualSort.length > 0) {
+        this.playlistService.playlistsSort = savedManualSort;
+      }
+
+      // Apply the selected sort method to the saved playlists
+      const sortedPlaylists = this.playlistService.applySort(saved);
+
+      // If no manual sort order exists, initialize it from the current sorted order
+      if (!savedManualSort || savedManualSort.length === 0) {
+        this.playlistService.initializeManualSortFromPlaylists(sortedPlaylists);
+      }
+
+      this.playlists.set(sortedPlaylists);
     } else {
-      // Fallback to loading just the sort state if full state is missing
-      const savedSort = this.playlistService.loadSortState();
-      if (savedSort) this.playlistService.playlistsSort = savedSort;
+      // No saved state - show loading
       this.playlists.set([
         {
           id: 'loading',
@@ -217,7 +226,14 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       // Fetch all playlists at once - pagination disabled
       // TODO: Re-enable pagination by passing pageToken and reducing maxResults
       const { playlists } = await this.playlistService.fetchAndMergePlaylists(undefined, 50);
-      this.playlists.set(playlists);
+
+      // Apply current sort order and initialize manual sort if needed
+      const sortedPlaylists = this.playlistService.applySort(playlists);
+      if (this.playlistService.playlistsSort.length === 0) {
+        this.playlistService.initializeManualSortFromPlaylists(sortedPlaylists);
+      }
+
+      this.playlists.set(sortedPlaylists);
       // nextPageToken tracking disabled for now
       this.playlistService.nextPageToken = undefined; // nextPageToken
 
@@ -289,7 +305,11 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         videos: [] as VideoCard[],
       }));
 
-      this.playlists.set(this.playlistService.applySort(newPlaylists));
+      // Apply current sort order and update manual sort
+      const sortedPlaylists = this.playlistService.applySort(newPlaylists);
+      this.playlistService.initializeManualSortFromPlaylists(sortedPlaylists);
+
+      this.playlists.set(sortedPlaylists);
       // nextPageToken tracking disabled for now
       this.playlistService.nextPageToken = undefined; // nextPageToken
       this.preloadedAllVideos = false;
@@ -567,6 +587,9 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       .filter((p) => p.id !== 'load-more-sentinel')
       .map((p) => ({ id: p.id, sortId: p.sortId! }));
     this.playlists.set(arr);
+
+    // Save the manual sort order changes
+    this.saveState();
   }
 
   trackById(index: number, item: any) {
@@ -584,12 +607,15 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     // Re-apply sorting to current playlists
     const currentPlaylists = this.playlists();
     const sortedPlaylists = this.playlistService.applySort(currentPlaylists);
+
+    // Initialize/update manual sort order to match the new sorted order
+    this.playlistService.initializeManualSortFromPlaylists(sortedPlaylists);
+
     this.playlists.set(sortedPlaylists);
 
     // Save the updated state
     this.saveState();
   }
-
   private saveState(): void {
     this.storage.setItem(StorageKey.STATE, this.playlists());
     this.storage.setItem(StorageKey.SORT, this.playlistService.playlistsSort);

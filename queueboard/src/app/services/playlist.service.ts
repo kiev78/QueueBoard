@@ -179,6 +179,26 @@ export class PlaylistService {
     this.storage.setItem(StorageKey.PLAYLIST_SORT_ORDER, sortOrder);
   }
 
+  /**
+   * Initialize manual sort order from current playlist order
+   * This should be called after applying a sort method to sync the manual sort with the result
+   */
+  public initializeManualSortFromPlaylists(playlists: PlaylistColumn[]): void {
+    // Create manual sort order based on current playlist order
+    this.playlistsSort = playlists.map((playlist, index) => ({
+      id: playlist.id,
+      sortId: index,
+    }));
+
+    // Update sortId on playlists to match
+    playlists.forEach((playlist, index) => {
+      playlist.sortId = index;
+    });
+
+    // Save to storage
+    this.storage.setItem(StorageKey.SORT, this.playlistsSort);
+  }
+
   public applySort(playlists: PlaylistColumn[]): PlaylistColumn[] {
     const sortedPlaylists = [...playlists];
 
