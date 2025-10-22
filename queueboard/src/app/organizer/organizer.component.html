@@ -8,8 +8,11 @@
         (click)="toggleDarkMode()"
         [title]="isDarkMode() ? 'Switch to light mode' : 'Switch to dark mode'"
       >
-        <span *ngIf="isDarkMode()">🌞</span>
-        <span *ngIf="!isDarkMode()">🌙</span>
+        @if (isDarkMode()) {
+        <span>🌞</span>
+        } @else {
+        <span>🌙</span>
+        }
       </button>
 
       <button
@@ -80,6 +83,7 @@
   <div *ngIf="error()" class="error" [textContent]="'Error: ' + error()"></div>
   <div class="controls">
     <input
+      #searchInput
       placeholder="Search videos, tags or playlists"
       [(ngModel)]="search"
       [disabled]="!hasPlaylists()"
@@ -107,7 +111,7 @@
       >
         + Add Playlist
       </button>
-      <div *ngIf="showAddPlaylist()" class="d-flex gap-2 align-items-center">
+      <div *ngIf="showAddPlaylist()" class="d-flex gap-2 align-items-center w-100">
         <input
           class="form-control form-control-sm"
           placeholder="Playlist name"

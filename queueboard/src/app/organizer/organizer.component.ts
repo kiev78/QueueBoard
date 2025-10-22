@@ -7,6 +7,9 @@ import {
   inject,
   PLATFORM_ID,
   DestroyRef,
+  HostListener,
+  ViewChild,
+  ElementRef,
 } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { RouterModule } from '@angular/router';
@@ -67,6 +70,9 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   private playlistService = inject(PlaylistService);
   private sortService = inject(SortService);
   private _search = signal('');
+  
+// Add this ViewChild decorator to get a reference to the search input
+  @ViewChild('searchInput') searchInput?: ElementRef<HTMLInputElement>;
 
   get search(): string {
     return this._search();
@@ -176,6 +182,32 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       })
       .catch((e) => console.error('Failed to preload playlist items', e))
       .finally(() => this.preloading.set(false));
+  }
+
+  /**
+   * Listens for global keydown events on the window.
+   * When '/' is pressed, it focuses the search input, unless the user is
+   * currently typing in another input, textarea, or contenteditable element.
+   * @param event The KeyboardEvent from the window.
+   */
+  @HostListener('window:keydown', ['$event'])
+  onWindowKeydown(event: KeyboardEvent): void {
+    // Skip when typing in inputs, textareas, or contenteditable elements
+    const target = event.target as HTMLElement;
+    const tagName = target.tagName;
+    if (
+      tagName === 'INPUT' ||
+      tagName === 'TEXTAREA' ||
+      target.isContentEditable
+    ) {
+      return;
+    }
+
+    // If the '/' key is pressed and the search input exists, focus it.
+    if (event.key === '/' && this.searchInput) {
+      event.preventDefault(); // Prevent the '/' character from being typed
+      this.searchInput.nativeElement.focus();
+    }
   }
 
   ngOnInit(): void {
