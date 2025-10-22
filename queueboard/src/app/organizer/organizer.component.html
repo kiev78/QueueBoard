@@ -2,6 +2,16 @@
   <div class="container-fluid">
     <span class="navbar-brand">QueueBoard — Organizer</span>
     <div class="ms-auto d-flex gap-2 align-items-center">
+      <!-- Dark mode toggle -->
+      <button
+        class="btn btn-outline-light"
+        (click)="toggleDarkMode()"
+        [title]="isDarkMode() ? 'Switch to light mode' : 'Switch to dark mode'"
+      >
+        <span *ngIf="isDarkMode()">🌞</span>
+        <span *ngIf="!isDarkMode()">🌙</span>
+      </button>
+
       <button
         *ngIf="!hasPlaylists() || !youtube.isAuthenticated()"
         class="btn btn-outline-light"

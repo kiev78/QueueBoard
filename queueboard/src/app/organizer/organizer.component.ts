@@ -141,6 +141,9 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   // per-playlist adding indicator
   addVideoLoading = signal<Record<string, boolean>>({});
 
+  // Dark mode toggle state
+  isDarkMode = signal(false);
+
   selectedVideo = signal<VideoCard | null>(null);
   minimizedVideos = signal<VideoCard[]>([]);
   isMinimized = computed(() => this.selectedVideo()?.isMinimized ?? false);
@@ -182,6 +185,9 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       tag.src = 'https://www.youtube.com/iframe_api';
       document.body.appendChild(tag);
     }
+
+    // Initialize dark mode from localStorage or system preference
+    this.initializeDarkMode();
 
     // Load saved sort order using SortService
     const savedSortOrder = this.sortService.loadSortOrder();
@@ -812,5 +818,57 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     } catch (e) {
       console.warn('Failed to save state:', e);
     }
+  }
+
+  // Dark mode functionality
+  private initializeDarkMode(): void {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+
+    // Check for saved preference
+    const savedDarkMode = localStorage.getItem('queueboard_dark_mode');
+
+    if (savedDarkMode !== null) {
+      // Use saved preference
+      this.isDarkMode.set(savedDarkMode === 'true');
+    } else {
+      // Fall back to system preference
+      const prefersDark =
+        window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      this.isDarkMode.set(prefersDark);
+    }
+
+    // Apply the dark mode class
+    this.applyDarkMode();
+  }
+
+  toggleDarkMode(): void {
+    const newDarkMode = !this.isDarkMode();
+    console.log('Toggle dark mode:', { from: this.isDarkMode(), to: newDarkMode });
+    this.isDarkMode.set(newDarkMode);
+
+    // Save preference
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      localStorage.setItem('queueboard_dark_mode', String(newDarkMode));
+      console.log('Saved to localStorage:', localStorage.getItem('queueboard_dark_mode'));
+    }
+
+    // Apply the change
+    this.applyDarkMode();
+  }
+
+  private applyDarkMode(): void {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+    const body = document.body;
+    const isDark = this.isDarkMode();
+    console.log('Apply dark mode:', { isDark, bodyClasses: body.classList.toString() });
+
+    if (isDark) {
+      body.classList.add('dark-mode');
+    } else {
+      body.classList.remove('dark-mode');
+    }
+
+    console.log('After applying:', { bodyClasses: body.classList.toString() });
   }
 }

@@ -18,11 +18,12 @@
 .player-card {
   position: relative;
   width: min(960px, 95%);
-  background: #fff;
+  background: var(--color-surface);
   border-radius: 8px;
   overflow: hidden;
   z-index: 1001;
-  box-shadow: 0 12px 40px rgba(2,6,23,0.6);
+  box-shadow: 0 12px 40px var(--color-shadow-dark);
+  color: var(--color-text);
 }
 
 .player-header {
@@ -30,7 +31,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 0.6rem 1rem;
-  border-bottom: 1px solid rgba(0,0,0,0.06);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .player-body {
