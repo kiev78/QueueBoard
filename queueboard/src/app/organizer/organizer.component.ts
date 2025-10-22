@@ -221,16 +221,16 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     // Initialize dark mode from localStorage or system preference
     this.initializeDarkMode();
 
-    // Load saved sort order using SortService
+    // Load saved sort order using SortService (which uses StorageService)
     const savedSortOrder = this.sortService.loadSortOrder();
     this.currentSortOrder.set(savedSortOrder);
-
-    const saved = this.loadState();
+    
+    const saved = this.storage.getPlaylists();
 
     if (saved) {
       // Apply custom sort if available, otherwise use the saved playlists as-is
-      const sortedPlaylists = this.sortService.applyCustomSort(saved);
-      this.playlists.set(sortedPlaylists);
+      // The filteredPlaylists computed signal will handle sorting.
+      this.playlists.set(saved);
     } else {
       // No saved state - show loading
       this.playlists.set([
@@ -330,7 +330,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         }
       }
 
-      this.saveState();
+      this.storage.savePlaylists(this.playlists());
 
       if (this.pollingInterval) clearInterval(this.pollingInterval);
       this.pollingInterval = setInterval(
@@ -404,7 +404,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         }
       }
 
-      this.saveState();
+      this.storage.savePlaylists(this.playlists());
       this.connecting.set(false);
     } catch (err: any) {
       this.error.set(err?.message || String(err));
@@ -457,7 +457,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       }
 
       this.saveState();
-    } catch (err: any) {
+    } catch (e: any) {
       this.error.set(err?.message || String(err));
       this.playlistService.nextPageToken = null;
     } finally {
@@ -485,7 +485,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         return [...currentPlaylists];
       });
 
-      this.saveState();
+      this.storage.savePlaylists(this.playlists());
     } catch (e) {
       console.error('Failed to load more videos for playlist', playlist.id, e);
     }
@@ -636,7 +636,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         this.error.set(`Failed to move video: ${err.message || String(err)}`);
       });
     }
-    this.saveState();
+    this.storage.savePlaylists(this.playlists());
   }
 
   private async syncMove(video: VideoCard, sourcePlaylistId: string, destPlaylistId: string) {
@@ -675,7 +675,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     }
 
     // Save the updated state
-    this.saveState();
+    this.storage.savePlaylists(this.playlists());
   }
 
   trackById(index: number, item: any) {
@@ -711,7 +711,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       // Reset UI
       this.newPlaylistName.set('');
       this.showAddPlaylist.set(false);
-      this.saveState();
+      this.storage.savePlaylists(this.playlists());
     } catch (e: any) {
       console.error('Failed to create playlist', e);
       this.error.set(e?.message || String(e));
@@ -785,8 +785,8 @@ export class OrganizerComponent implements OnInit, OnDestroy {
           if (idx >= 0) {
             curr[idx] = { ...curr[idx], videos: mapped };
             this.playlists.set(curr);
-            this.playlistService.updatePlaylistModified(playlistId);
-            this.saveState();
+            this.playlistService.updatePlaylistModified(playlistId); // Still update the service's internal state
+            this.storage.savePlaylists(this.playlists());
           }
         } catch (e) {
           console.error('Failed to refresh playlist items after add', e);
@@ -818,7 +818,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
           curr[idx] = updated;
           this.playlists.set(curr);
           this.playlistService.updatePlaylistModified(playlistId);
-          this.saveState();
+          this.storage.savePlaylists(this.playlists());
         }
       }
     } catch (err: any) {
@@ -832,32 +832,20 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     }
   }
 
-  private loadState(): PlaylistColumn[] | null {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return null;
-    try {
-      const saved = localStorage.getItem('queueboard_state');
-      return saved ? JSON.parse(saved) : null;
-    } catch (e) {
-      console.warn('Failed to load state:', e);
-      return null;
-    }
-  }
-
-  private saveState(): void {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
-    try {
-      localStorage.setItem('queueboard_state', JSON.stringify(this.playlists()));
-    } catch (e) {
-      console.warn('Failed to save state:', e);
-    }
-  }
+  // Removed private loadState() and saveState() methods as they are now handled by StorageService
+  // The calls to this.saveState() have been replaced with this.storage.setItem(StorageKey.STATE, JSON.stringify(this.playlists()));
+  // The call to this.loadState() has been replaced with this.storage.getItem(StorageKey.STATE);
 
   // Dark mode functionality
   private initializeDarkMode(): void {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
-
+    // This entire logic is browser-specific. Do nothing on the server.
+    if (!isPlatformBrowser(this.platformId)) {
+      this.isDarkMode.set(false); // Default to light mode on server
+      return;
+    }
+    
     // Check for saved preference
-    const savedDarkMode = localStorage.getItem('queueboard_dark_mode');
+    const savedDarkMode = this.storage.getItem(StorageKey.DARK_MODE);
 
     if (savedDarkMode !== null) {
       // Use saved preference
@@ -877,19 +865,17 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     const newDarkMode = !this.isDarkMode();
     console.log('Toggle dark mode:', { from: this.isDarkMode(), to: newDarkMode });
     this.isDarkMode.set(newDarkMode);
-
     // Save preference
-    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
-      localStorage.setItem('queueboard_dark_mode', String(newDarkMode));
-      console.log('Saved to localStorage:', localStorage.getItem('queueboard_dark_mode'));
-    }
+    // StorageService handles platform checks internally
+    this.storage.setItem(StorageKey.DARK_MODE, String(newDarkMode));
+    console.log('Saved to storage:', this.storage.getItem(StorageKey.DARK_MODE));
 
     // Apply the change
     this.applyDarkMode();
   }
 
   private applyDarkMode(): void {
-    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    if (!isPlatformBrowser(this.platformId)) return;
 
     const body = document.body;
     const isDark = this.isDarkMode();

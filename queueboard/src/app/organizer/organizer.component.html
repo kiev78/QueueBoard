@@ -15,14 +15,15 @@
         }
       </button>
 
+    @if (!hasPlaylists() || !youtube.isAuthenticated()) {
+        
       <button
-        *ngIf="!hasPlaylists() || !youtube.isAuthenticated()"
         class="btn btn-outline-light"
         (click)="connectYouTube()"
         [disabled]="connecting()"
       >
-        <span *ngIf="!connecting()" class="me-1">☁️</span>
-        <span *ngIf="connecting()" class="me-1">⏳</span>
+        @if (!connecting()) { <span class="me-1">☁️</span> }
+        @if (connecting()) { <span class="me-1">⏳</span> }
         Connect YouTube
       </button>
 
@@ -34,6 +35,7 @@
       >
         Refresh
       </button>
+   
       <button
         class="btn btn-light text-danger"
         *ngIf="youtube.isAuthenticated() && !connecting()"
@@ -41,6 +43,7 @@
       >
         Sign Out
       </button>
+    }
     </div>
   </div>
 </nav>
@@ -79,8 +82,10 @@
       </div>
     </div>
   </div>
-  }@else{
-  <div *ngIf="error()" class="error" [textContent]="'Error: ' + error()"></div>
+  }@else if (error()) { 
+    <div class="error" [textContent]="'Error: ' + error()"></div>
+  } 
+  @else{
   <div class="controls">
     <input
       #searchInput
@@ -98,12 +103,14 @@
       [disabled]="!hasPlaylists()"
       title="Sort playlists"
     >
-      <option *ngFor="let option of sortOptions" [value]="option.value">
+      @for (option of sortOptions; track option.value) {
+      <option [value]="option.value">
         {{ option.label }}
       </option>
+      }
     </select>
     <!-- Add playlist controls next to sort dropdown -->
-    <div class="add-playlist ms-2 d-flex align-items-center">
+    <div class="add-playlist ms-2 d-flex align-items-center w-100">
       <button
         class="btn btn-outline-primary"
         *ngIf="!showAddPlaylist()"
@@ -111,7 +118,8 @@
       >
         + Add Playlist
       </button>
-      <div *ngIf="showAddPlaylist()" class="d-flex gap-2 align-items-center w-100">
+      @if (showAddPlaylist()) {
+      <div class="d-flex gap-2 align-items-center w-100">
         <input
           class="form-control form-control-sm"
           placeholder="Playlist name"
@@ -131,6 +139,7 @@
           Cancel
         </button>
       </div>
+      }
     </div>
   </div>
 
@@ -142,14 +151,14 @@
     cdkDropList
     [cdkDropListData]="filteredPlaylists()"
   >
+    @for (playlist of filteredPlaylists(); track trackById) {
     <div
       class="column"
-      *ngFor="let playlist of filteredPlaylists(); trackBy: trackById"
       [style.borderTopColor]="playlist.color"
       [class.load-more-column]="playlist.id === 'load-more-sentinel'"
     >
       <!-- Regular Playlist Column -->
-      <ng-container *ngIf="playlist.id !== 'load-more-sentinel'">
+      @if (playlist.id !== 'load-more-sentinel') {
         <div class="card playlist-card" cdkDrag>
           <div class="card-header">
             <div class="fw-bold">
@@ -165,7 +174,8 @@
               [cdkDropListData]="playlist.videos"
               (cdkDropListDropped)="drop($event)"
             >
-              <div class="video-card" *ngFor="let v of playlist.videos; trackBy: trackById" cdkDrag>
+              @for (v of playlist.videos; track trackById) {
+              <div class="video-card" cdkDrag>
                 <div class="video-main">
                   <img
                     *ngIf="v.thumbnail"
@@ -218,11 +228,12 @@
                 <button class="btn btn-sm btn-outline-primary" (click)="loadMoreVideos(playlist)">Load More</button>
               </div>
               -->
+              }
             </div>
           </div>
           <div class="card-footer playlist-footer">
+              @if (!addVideoVisible()[playlist.id]) {
             <div
-              *ngIf="!addVideoVisible()[playlist.id]"
               class="d-flex justify-content-between align-items-center"
             >
               <div class="text-muted small">{{ playlist.videos.length }} videos</div>
@@ -233,7 +244,9 @@
                 + Add video
               </button>
             </div>
-            <div *ngIf="addVideoVisible()[playlist.id]" class="d-flex gap-2 align-items-center">
+            }
+            @if (addVideoVisible()[playlist.id]) {
+            <div class="d-flex gap-2 align-items-center">
               <input
                 #videoUrlInput
                 class="form-control form-control-sm"
@@ -245,8 +258,8 @@
                 (click)="addVideoToPlaylistUI(playlist.id, videoUrlInput.value)"
                 [disabled]="addVideoLoading()[playlist.id]"
               >
-                <span *ngIf="!addVideoLoading()[playlist.id]">Add</span>
-                <span *ngIf="addVideoLoading()[playlist.id]">Adding…</span>
+                @if (!addVideoLoading()[playlist.id]) { <span>Add</span> }
+                @if (addVideoLoading()[playlist.id]) { <span>Adding…</span> }
               </button>
               <button
                 class="btn btn-sm btn-secondary"
@@ -256,9 +269,10 @@
                 Cancel
               </button>
             </div>
+            }
           </div>
         </div>
-      </ng-container>
+      }
 
       <!-- "Load More" Column - DISABLED (pagination removed) -->
       <!-- TODO: Re-enable when pagination is restored -->
@@ -273,22 +287,26 @@
       </ng-container>
       -->
     </div>
+    }
   </div>
 
-  <div *ngIf="filteredPlaylists().length === 0" class="no-results">
+  @if (filteredPlaylists().length === 0) {
+  <div class="no-results">
     No playlists or videos match your search.
   </div>
+  }
 
   <!-- Overlay player with Angular YouTube Player -->
-  <app-video-player
-    *ngIf="selectedVideo() && !isMinimized()"
-    [video]="selectedVideo()!"
-    (closePlayer)="closeVideo()"
-    (minimizePlayer)="minimizeVideo()"
-    (playerReady)="onPlayerReady($event)"
-    (stateChange)="onPlayerStateChange($event)"
-  >
-  </app-video-player>
+  @if (selectedVideo() && !isMinimized()) {
+    <app-video-player
+      [video]="selectedVideo()!"
+      (closePlayer)="closeVideo()"
+      (minimizePlayer)="minimizeVideo()"
+      (playerReady)="onPlayerReady($event)"
+      (stateChange)="onPlayerStateChange($event)"
+    >
+    </app-video-player>
+  }
 
   <!-- Minimized Videos Stack -->
   <app-minimized-videos
@@ -301,5 +319,5 @@
     (stateChange)="onPlayerStateChange($event)"
   >
   </app-minimized-videos>
-  }
+}
 </div>

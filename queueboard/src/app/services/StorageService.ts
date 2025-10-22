@@ -1,5 +1,6 @@
 import { Injectable, PLATFORM_ID, inject } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
+import { PlaylistColumn } from './playlist.service';
 
 export enum StorageKey {
   STATE = 'queueboard_state_v1',
@@ -7,6 +8,7 @@ export enum StorageKey {
   GAPI_TOKEN = 'queueboard_gapi_token',
   NEXT_PAGE_TOKEN = 'queueboard_next_page_token_v1',
   PLAYLIST_SORT_ORDER = 'queueboard_playlist_sort_order_v1',
+  DARK_MODE = 'queueboard_dark_mode_v1',
 }
 
 /**
@@ -165,6 +167,14 @@ export class StorageService {
     } catch {
       return false;
     }
+  }
+
+  getPlaylists(): PlaylistColumn[] | null {
+    return this.getItem<PlaylistColumn[]>(StorageKey.STATE);
+  }
+
+  savePlaylists(playlists: PlaylistColumn[]): void {
+    this.setItem(StorageKey.STATE, playlists);
   }
 
   /**
