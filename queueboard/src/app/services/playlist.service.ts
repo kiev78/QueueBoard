@@ -4,23 +4,23 @@ import { YouTubePlaylist, YouTubePlaylistItem } from './youtube-api.types';
 import { StorageKey, StorageService } from './StorageService';
 
 export interface VideoCard {
-  playlistItemId: string;
   id: string;
+  playlistItemId?: string;
   title: string;
-  description?: string;
+  description: string;
   duration?: string;
   thumbnail?: string;
   tags?: string[];
   channelTitle?: string;
   publishedAt?: string;
-  youtubeUrl?: string;
+  youtubeUrl: string;
   detailsVisible?: boolean;
   isMinimized?: boolean;
-  isPlaying?: boolean;
   resumeTime?: number;
 }
 
 export interface PlaylistColumn {
+  publishedAt: number;
   id: string;
   title: string;
   description?: string;
@@ -37,12 +37,21 @@ export interface PlaylistSort {
   dateAddedToApp?: string; // When playlist was first added to our app
   lastModifiedInApp?: string; // When playlist was last modified in our app
 }
+export type SortOrder = 'custom' | 'alphabetical' | 'recent';
 
+export interface SortOption {
+  value: SortOrder;
+  label: string;
+}
+
+// Legacy enum for backward compatibility - should be replaced with SortOrder
 export enum PlaylistSortOrder {
-  LAST_UPDATED = 'last_updated',
-  DATE_ADDED = 'date_added',
+  CUSTOM = 'custom',
   ALPHABETICAL = 'alphabetical',
-  YOUTUBE_CREATED = 'youtube_created',
+  RECENT = 'recent',
+  LAST_UPDATED = 'recent', // alias for recent
+  DATE_ADDED = 'recent', // alias for recent
+  YOUTUBE_CREATED = 'recent', // alias for recent
 }
 
 export interface PlaylistSortOption {
@@ -124,6 +133,7 @@ export class PlaylistService {
       description: p.snippet?.description || '',
       color: '#e0e0e0',
       videos: [] as VideoCard[],
+      publishedAt: p.snippet?.publishedAt ? new Date(p.snippet.publishedAt).getTime() : 0,
     }));
     // nextPageToken scaffolding kept for future use
     const nextPageToken = undefined; // res?.nextPageToken (disabled)
@@ -143,6 +153,7 @@ export class PlaylistService {
             title: f.title || s.title,
             description: f.description || s.description,
             color: s.color || f.color, // Prefer stored color
+            publishedAt: f.publishedAt, // Always use the fresh timestamp from YouTube
           } as PlaylistColumn;
         }
         return s;
@@ -254,6 +265,7 @@ export class PlaylistService {
           videos: p.videos,
           nextPageToken: p.nextPageToken,
           sortId: p.sortId,
+          publishedAt: p.publishedAt || 0,
         }));
 
         this.storage.setItem(StorageKey.STATE, cleanedPlaylists);
@@ -398,6 +410,67 @@ export class PlaylistService {
     if (updated) {
       this.storage.setItem(StorageKey.SORT, this.playlistsSort);
     }
+  }
+
+  /**
+   * Create a new playlist both locally and on YouTube (if authenticated).
+   * Returns the new PlaylistColumn representing the created playlist.
+   */
+  public async createPlaylist(title: string, description = ''): Promise<PlaylistColumn> {
+    const id = 'local-' + Date.now().toString(36);
+    const newPl: PlaylistColumn = {
+      id,
+      title,
+      description,
+      color: '#e0e0e0',
+      videos: [],
+      publishedAt: Date.now(),
+    };
+
+    // Persist locally first
+    const current = this.loadState() || [];
+    const merged = [newPl, ...current];
+    this.storage.setItem(StorageKey.STATE, merged);
+
+    // Update sort metadata
+    const now = new Date().toISOString();
+    const sortEntry: PlaylistSort = {
+      id: newPl.id,
+      sortId: this.playlistsSort.length,
+      dateAddedToApp: now,
+      lastModifiedInApp: now,
+    } as PlaylistSort;
+    this.playlistsSort.push(sortEntry);
+    this.storage.setItem(StorageKey.SORT, this.playlistsSort);
+
+    // Attempt to create on YouTube if authenticated
+    try {
+      if (
+        this.youtube.isAuthenticated &&
+        typeof this.youtube.isAuthenticated === 'function' &&
+        this.youtube.isAuthenticated()
+      ) {
+        const res = await this.youtube.createPlaylist(title, description);
+        if (res && res.id) {
+          // Replace local id with YouTube id and persist
+          newPl.id = res.id;
+          // merge with stored state
+          const replaced = merged.map((p) => (p.id === id ? newPl : p));
+          this.storage.setItem(StorageKey.STATE, replaced);
+
+          // Update sort entry id
+          const sortIdx = this.playlistsSort.findIndex((s) => s.id === id);
+          if (sortIdx >= 0) {
+            this.playlistsSort[sortIdx].id = res.id;
+            this.storage.setItem(StorageKey.SORT, this.playlistsSort);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to create playlist on YouTube:', e);
+    }
+
+    return newPl;
   }
 
   async loadMoreVideos(playlist: PlaylistColumn): Promise<PlaylistColumn> {

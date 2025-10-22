@@ -366,3 +366,21 @@
   .welcome-card { padding: 1rem; }
   .welcome-screen { padding: 1rem 0.5rem; }
 }
+
+.add-playlist input.form-control-sm {
+  min-width: 180px;
+}
+
+.add-playlist .btn-sm {
+  height: 34px;
+}
+
+.playlist-footer {
+  padding: 0.5rem;
+  border-top: 1px solid rgba(0,0,0,0.04);
+  background: transparent;
+}
+
+.playlist-footer input.form-control-sm {
+  min-width: 220px;
+}

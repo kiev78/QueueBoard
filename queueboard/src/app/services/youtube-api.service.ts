@@ -265,6 +265,37 @@ export class YoutubeApiService {
     return response.result;
   }
 
+  async createPlaylist(title: string, description: string = '') {
+    if (!this.accessToken) throw new Error('Not authenticated for write operations.');
+    const response = await window.gapi.client.youtube.playlists.insert({
+      part: 'snippet',
+      resource: {
+        snippet: {
+          title,
+          description,
+        },
+      },
+    });
+    return response.result;
+  }
+
+  /**
+   * Fetch video metadata (snippet + contentDetails) using the public REST API and API key.
+   * This does not require an OAuth token and is safe to call for public video metadata.
+   */
+  async fetchVideoMetadata(videoId: string) {
+    if (!this.apiKey) throw new Error('Google API key not configured');
+    const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${encodeURIComponent(
+      videoId
+    )}&key=${encodeURIComponent(this.apiKey)}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`Failed to fetch video metadata (${res.status})`);
+    }
+    const data = await res.json();
+    return (data.items && data.items[0]) || null;
+  }
+
   async removeVideoFromPlaylist(playlistItemId: string) {
     if (!this.accessToken) throw new Error('Not authenticated for write operations.');
     return await window.gapi.client.youtube.playlistItems.delete({ id: playlistItemId });

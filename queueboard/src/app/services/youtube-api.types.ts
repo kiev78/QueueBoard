@@ -66,14 +66,26 @@ export interface YouTubePlaylist {
     };
   };
 }
- 
+
+export interface YouTubePlaylistItemSnippet {
+  publishedAt?: string;
+  channelId?: string;
+  title?: string;
+  description?: string;
+  thumbnails?: YouTubeThumbnails;
+  channelTitle?: string;
+  playlistId?: string;
+  position?: number;
+  resourceId?: YouTubeResourceId;
+  tags?: string[];
+}
 
 export interface YouTubePlaylistItemContentDetails {
   videoId?: string;
   startAt?: string;
   endAt?: string;
   note?: string;
-    duration?: string;
+  duration?: string;
   videoPublishedAt?: string;
 }
 
@@ -85,8 +97,8 @@ export interface YouTubePlaylistItem {
   kind: 'youtube#playlistItem';
   etag?: string;
   id: string;
-  snippet?: YouTubeVideoSnippet;
-  contentDetails?: YouTubeVideoContentDetails;
+  snippet?: YouTubePlaylistItemSnippet;
+  contentDetails?: YouTubePlaylistItemContentDetails;
   status?: YouTubePlaylistItemStatus;
 }
 
@@ -127,30 +139,30 @@ export interface YouTubeVideoContentDetails {
 }
 
 export interface YouTubeVideoStatus {
-    uploadStatus?: string;
-    failureReason?: string;
-    rejectionReason?: string;
-    privacyStatus?: string;
-    publishAt?: string;
-    license?: string;
-    embeddable?: boolean;
-    publicStatsViewable?: boolean;
-    madeForKids?: boolean;
-    selfDeclaredMadeForKids?: boolean;
+  uploadStatus?: string;
+  failureReason?: string;
+  rejectionReason?: string;
+  privacyStatus?: string;
+  publishAt?: string;
+  license?: string;
+  embeddable?: boolean;
+  publicStatsViewable?: boolean;
+  madeForKids?: boolean;
+  selfDeclaredMadeForKids?: boolean;
 }
 
 export interface YouTubeVideoStatistics {
-    viewCount?: string;
-    likeCount?: string;
-    dislikeCount?: string;
-    favoriteCount?: string;
-    commentCount?: string;
+  viewCount?: string;
+  likeCount?: string;
+  dislikeCount?: string;
+  favoriteCount?: string;
+  commentCount?: string;
 }
 
 export interface YouTubeVideoPlayer {
-    embedHtml?: string;
-    embedHeight?: number;
-    embedWidth?: number;
+  embedHtml?: string;
+  embedHeight?: number;
+  embedWidth?: number;
 }
 
 export interface YouTubeVideo {
@@ -166,16 +178,15 @@ export interface YouTubeVideo {
 
 // Playlist Image
 export interface YouTubePlaylistImage {
-    kind: "youtube#playlistImage",
-    id: string,
-    snippet: {
-        playlistId: string,
-        type: string,
-        width: string,
-        height: string,
-    }
+  kind: 'youtube#playlistImage';
+  id: string;
+  snippet: {
+    playlistId: string;
+    type: string;
+    width: string;
+    height: string;
+  };
 }
-
 
 // API Response
 export interface YouTubeApiResponse<T> {
@@ -239,8 +250,6 @@ export function isPlaylist(item: unknown): item is YouTubePlaylist {
 
 export function isApiResponse<T>(response: unknown): response is YouTubeApiResponse<T> {
   return (
-    typeof response === 'object' &&
-    response !== null &&
-    Array.isArray((response as any).items)
+    typeof response === 'object' && response !== null && Array.isArray((response as any).items)
   );
 }

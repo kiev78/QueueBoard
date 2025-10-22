@@ -33,12 +33,13 @@ import { ErrorHandlerService } from '../services/ErrorHandlerService';
 import { PlayerManagerService } from '../services/PlayerManagerService';
 import { InputSanitizerService } from '../services/InputSanitizerService';
 import {
+  PlaylistColumn,
   PlaylistService,
   VideoCard,
-  PlaylistColumn,
-  PlaylistSortOrder,
-  PlaylistSortOption,
+  SortOrder,
+  SortOption,
 } from '../services/playlist.service';
+import { SortService } from '../services/sort.service';
 
 @Component({
   selector: 'app-organizer',
@@ -64,6 +65,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   private sanitizer = inject(InputSanitizerService);
   private destroyRef = inject(DestroyRef);
   private playlistService = inject(PlaylistService);
+  private sortService = inject(SortService);
   private _search = signal('');
 
   get search(): string {
@@ -106,14 +108,17 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         .filter((x): x is PlaylistColumn => x !== null);
     }
 
+    // Apply sorting using SortService
+    const sorted = this.sortService.sortPlaylists(filtered, this.currentSortOrder());
+
     // Pagination UI removed - "Load More" sentinel disabled
     // TODO: Re-enable by uncommenting the following block when pagination is restored:
     /*
     if (this.playlistService.nextPageToken) {
-      return [...filtered, { id: 'load-more-sentinel', title: 'Next', videos: [] }];
+      return [...sorted, { id: 'load-more-sentinel', title: 'Next', videos: [] }];
     }
     */
-    return filtered;
+    return sorted;
   });
   hasPlaylists = computed(
     () => this.playlists().length > 0 && this.playlists()[0]?.id !== 'loading'
@@ -123,13 +128,32 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   loadingMore = signal(false);
 
   // Sort-related properties
-  currentSortOrder = signal<PlaylistSortOrder>(PlaylistSortOrder.LAST_UPDATED);
-  sortOptions: PlaylistSortOption[] = [];
+  currentSortOrder = signal<SortOrder>('custom');
+  get sortOptions(): SortOption[] {
+    return this.sortService.sortOptions;
+  }
+
+  // Add playlist UI state
+  showAddPlaylist = signal(false);
+  newPlaylistName = signal('');
+  // Per-playlist add-video UI state (visibility)
+  addVideoVisible = signal<Record<string, boolean>>({});
+  // per-playlist adding indicator
+  addVideoLoading = signal<Record<string, boolean>>({});
 
   selectedVideo = signal<VideoCard | null>(null);
   minimizedVideos = signal<VideoCard[]>([]);
   isMinimized = computed(() => this.selectedVideo()?.isMinimized ?? false);
   playerReady = signal(false);
+
+  // Helper methods for template
+  showAddVideoForm(playlistId: string): void {
+    this.addVideoVisible.update((m) => ({ ...(m || {}), [playlistId]: true }));
+  }
+
+  hideAddVideoForm(playlistId: string): void {
+    this.addVideoVisible.update((m) => ({ ...(m || {}), [playlistId]: false }));
+  }
   playerState = signal<YT.PlayerState | null>(null);
   private playerInstances = new Map<string, YT.Player>();
 
@@ -159,29 +183,15 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       document.body.appendChild(tag);
     }
 
-    // Initialize sort options and load saved sort order
-    this.sortOptions = this.playlistService.sortOptions;
-    const savedSortOrder = this.playlistService.loadSortOrder();
+    // Load saved sort order using SortService
+    const savedSortOrder = this.sortService.loadSortOrder();
     this.currentSortOrder.set(savedSortOrder);
-    this.playlistService.currentSortOrder = savedSortOrder;
 
-    const saved = this.playlistService.loadState();
-    const savedManualSort = this.playlistService.loadSortState();
+    const saved = this.loadState();
 
     if (saved) {
-      // Load manual sort order if available
-      if (savedManualSort && savedManualSort.length > 0) {
-        this.playlistService.playlistsSort = savedManualSort;
-      }
-
-      // Apply the selected sort method to the saved playlists
-      const sortedPlaylists = this.playlistService.applySort(saved);
-
-      // If no manual sort order exists, initialize it from the current sorted order
-      if (!savedManualSort || savedManualSort.length === 0) {
-        this.playlistService.initializeManualSortFromPlaylists(sortedPlaylists);
-      }
-
+      // Apply custom sort if available, otherwise use the saved playlists as-is
+      const sortedPlaylists = this.sortService.applyCustomSort(saved);
       this.playlists.set(sortedPlaylists);
     } else {
       // No saved state - show loading
@@ -191,6 +201,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
           title: '',
           description: '',
           color: '#fff',
+          publishedAt: 0,
           videos: [
             {
               id: 'spinner',
@@ -599,17 +610,33 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   }
 
   dropPlaylist(event: CdkDragDrop<PlaylistColumn[]>) {
-    const arr = [...this.playlists()];
-    moveItemInArray(arr, event.previousIndex, event.currentIndex);
-    arr.forEach((playlist, index) => {
-      playlist.sortId = index;
-    });
-    this.playlistService.playlistsSort = arr
-      .filter((p) => p.id !== 'load-more-sentinel')
-      .map((p) => ({ id: p.id, sortId: p.sortId! }));
-    this.playlists.set(arr);
+    const currentSort = this.currentSortOrder();
 
-    // Save the manual sort order changes
+    if (currentSort === 'custom') {
+      // In custom mode: update the raw playlists order directly
+      const arr = [...this.playlists()];
+      moveItemInArray(arr, event.previousIndex, event.currentIndex);
+      this.playlists.set(arr);
+
+      // Update custom sort order storage
+      this.sortService.updateCustomSortAfterDrop(arr);
+    } else {
+      // In alphabetical/recent mode: capture current filtered order and switch to custom
+      const currentFiltered = [...this.filteredPlaylists()];
+      moveItemInArray(currentFiltered, event.previousIndex, event.currentIndex);
+
+      // Set this as the new raw playlists order
+      this.playlists.set(currentFiltered);
+
+      // Update custom sort order storage
+      this.sortService.updateCustomSortAfterDrop(currentFiltered);
+
+      // Switch to custom mode
+      this.currentSortOrder.set('custom');
+      this.sortService.saveSortOrder('custom');
+    }
+
+    // Save the updated state
     this.saveState();
   }
 
@@ -621,27 +648,169 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     video.detailsVisible = !video.detailsVisible;
   }
 
-  onSortOrderChange(sortOrder: PlaylistSortOrder) {
+  onSortOrderChange(sortOrder: SortOrder) {
     this.currentSortOrder.set(sortOrder);
-    this.playlistService.saveSortOrder(sortOrder);
+    this.sortService.saveSortOrder(sortOrder);
 
-    // Re-apply sorting to current playlists
-    const currentPlaylists = this.playlists();
-    const sortedPlaylists = this.playlistService.applySort(currentPlaylists);
-
-    // Initialize/update manual sort order to match the new sorted order
-    this.playlistService.initializeManualSortFromPlaylists(sortedPlaylists);
-
-    this.playlists.set(sortedPlaylists);
-
-    // Save the updated state
-    this.saveState();
+    // The computed filteredPlaylists will automatically update with the new sort
+    // No need to manually re-sort here since it's handled by the computed signal
   }
+
+  async createPlaylistFromUI() {
+    const name = (this.newPlaylistName() || '').trim();
+    if (!name) return;
+
+    this.connecting.set(true);
+    try {
+      const created = await this.playlistService.createPlaylist(name, 'Created from QueueBoard');
+
+      // Insert at the top of playlists and reapply sort
+      const curr = [...this.playlists()];
+      curr.unshift(created);
+      const sorted = this.playlistService.applySort(curr);
+      this.playlists.set(sorted);
+
+      // Reset UI
+      this.newPlaylistName.set('');
+      this.showAddPlaylist.set(false);
+      this.saveState();
+    } catch (e: any) {
+      console.error('Failed to create playlist', e);
+      this.error.set(e?.message || String(e));
+    } finally {
+      this.connecting.set(false);
+    }
+  }
+
+  private extractVideoId(input: string): string | null {
+    if (!input) return null;
+    const trimmed = input.trim();
+    // If it looks like a raw video id (11 chars typical for YouTube IDs)
+    if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
+
+    try {
+      const url = new URL(trimmed);
+      // youtu.be short links
+      if (url.hostname.includes('youtu.be')) {
+        const parts = url.pathname.split('/').filter(Boolean);
+        return parts.length ? parts[0] : null;
+      }
+      // Regular watch?v=VIDEOID
+      const v = url.searchParams.get('v');
+      if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
+      // Some embed URLs or /v/VIDEOID
+      const pathParts = url.pathname.split('/').filter(Boolean);
+      const maybe = pathParts[pathParts.length - 1];
+      if (maybe && /^[a-zA-Z0-9_-]{11}$/.test(maybe)) return maybe;
+    } catch (e) {
+      // Not a URL - fall through
+    }
+
+    return null;
+  }
+
+  async addVideoToPlaylistUI(playlistId: string, urlOrId: string) {
+    if (!urlOrId) return;
+    const videoId = this.extractVideoId(urlOrId) || urlOrId.trim();
+    if (!videoId) {
+      this.error.set('Could not parse a YouTube video id from the provided value.');
+      return;
+    }
+
+    // mark this playlist as adding
+    this.addVideoLoading.update((m) => ({ ...(m || {}), [playlistId]: true }));
+    try {
+      if (this.youtube.isAuthenticated && this.youtube.isAuthenticated()) {
+        // Attempt to insert on YouTube
+        await this.youtube.addVideoToPlaylist(playlistId, videoId);
+
+        // Refresh playlist items for this playlist
+        try {
+          const { items } = await this.youtube.fetchPlaylistItems(playlistId, 50);
+          const mapped = (items as any[]).map((v: any) => ({
+            id: v.contentDetails?.videoId || '',
+            playlistItemId: v.id,
+            title: v.snippet?.title || '',
+            description: v.snippet?.description || '',
+            duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
+            thumbnail: v.snippet?.thumbnails?.default?.url || '',
+            tags: v.snippet?.tags || [],
+            channelTitle: v.snippet?.channelTitle || '',
+            publishedAt: v.snippet?.publishedAt || '',
+            youtubeUrl: v.contentDetails?.videoId
+              ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}`
+              : '',
+          }));
+
+          const curr = [...this.playlists()];
+          const idx = curr.findIndex((p) => p.id === playlistId);
+          if (idx >= 0) {
+            curr[idx] = { ...curr[idx], videos: mapped };
+            this.playlists.set(curr);
+            this.playlistService.updatePlaylistModified(playlistId);
+            this.saveState();
+          }
+        } catch (e) {
+          console.error('Failed to refresh playlist items after add', e);
+        }
+      } else {
+        // Not authenticated - add a local placeholder entry so user sees the video in UI
+        // Try to fetch metadata (title/thumbnail/duration) using API key if available
+        let metadata: any = null;
+        try {
+          metadata = await this.youtube.fetchVideoMetadata(videoId);
+        } catch (e) {
+          // ignore metadata fetch failure
+        }
+
+        const newVideo: VideoCard = {
+          id: videoId,
+          playlistItemId: 'local-' + Date.now().toString(36),
+          title: metadata?.snippet?.title || videoId,
+          description: metadata?.snippet?.description || '',
+          duration: this.youtube.isoDurationToString(metadata?.contentDetails?.duration || ''),
+          thumbnail: metadata?.snippet?.thumbnails?.default?.url || '',
+          youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
+        };
+
+        const curr = [...this.playlists()];
+        const idx = curr.findIndex((p) => p.id === playlistId);
+        if (idx >= 0) {
+          const updated = { ...curr[idx], videos: [...(curr[idx].videos || []), newVideo] };
+          curr[idx] = updated;
+          this.playlists.set(curr);
+          this.playlistService.updatePlaylistModified(playlistId);
+          this.saveState();
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to add video to playlist', err);
+      this.error.set(err?.message || String(err));
+    } finally {
+      // clear loading for this playlist
+      this.addVideoLoading.update((m) => ({ ...(m || {}), [playlistId]: false }));
+      // close input
+      this.addVideoVisible.update((m) => ({ ...(m || {}), [playlistId]: false }));
+    }
+  }
+
+  private loadState(): PlaylistColumn[] | null {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return null;
+    try {
+      const saved = localStorage.getItem('queueboard_state');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      console.warn('Failed to load state:', e);
+      return null;
+    }
+  }
+
   private saveState(): void {
-    this.storage.setItem(StorageKey.STATE, this.playlists());
-    this.storage.setItem(StorageKey.SORT, this.playlistService.playlistsSort);
-    // nextPageToken storage disabled since pagination is removed
-    // TODO: Re-enable when pagination is restored:
-    // this.storage.setItem(StorageKey.NEXT_PAGE_TOKEN, this.playlistService.nextPageToken);
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem('queueboard_state', JSON.stringify(this.playlists()));
+    } catch (e) {
+      console.warn('Failed to save state:', e);
+    }
   }
 }
