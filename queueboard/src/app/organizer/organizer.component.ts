@@ -39,11 +39,11 @@ import {
   PlaylistColumn,
   PlaylistService,
   VideoCard,
-  SortOrder,
+  SortOrder, 
   SortOption,
 } from '../services/playlist.service';
 import { SortService } from '../services/sort.service';
-
+import { WelcomeScreenComponent } from './welcome-screen/welcome-screen.component';
 @Component({
   selector: 'app-organizer',
   standalone: true,
@@ -54,6 +54,7 @@ import { SortService } from '../services/sort.service';
     FormsModule,
     VideoPlayerComponent,
     MinimizedVideosComponent,
+    WelcomeScreenComponent,
   ],
   templateUrl: './organizer.component.html',
   styleUrls: ['./organizer.component.scss'],
@@ -148,7 +149,8 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   addVideoLoading = signal<Record<string, boolean>>({});
 
   // Dark mode toggle state
-  isDarkMode = signal(false);
+  isDarkMode = signal(true);
+  themeInitialized = signal(false);
 
   selectedVideo = signal<VideoCard | null>(null);
   minimizedVideos = signal<VideoCard[]>([]);
@@ -220,7 +222,8 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
     // Initialize dark mode from localStorage or system preference
     this.initializeDarkMode();
-
+    this.themeInitialized.set(true);
+ 
     // Load saved sort order using SortService (which uses StorageService)
     const savedSortOrder = this.sortService.loadSortOrder();
     this.currentSortOrder.set(savedSortOrder);
@@ -272,65 +275,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         return;
       }
 
-      // Fetch all playlists at once - pagination disabled
-      // TODO: Re-enable pagination by passing pageToken and reducing maxResults
-      const { playlists } = await this.playlistService.fetchAndMergePlaylists(undefined, 50);
-
-      // Apply current sort order and initialize manual sort if needed
-      const sortedPlaylists = this.playlistService.applySort(playlists);
-      if (this.playlistService.playlistsSort.length === 0) {
-        this.playlistService.initializeManualSortFromPlaylists(sortedPlaylists);
-      }
-
-      this.playlists.set(sortedPlaylists);
-      // nextPageToken tracking disabled for now
-      this.playlistService.nextPageToken = undefined; // nextPageToken
-
-      for (const pl of this.playlists()) {
-        try {
-          if (pl.videos && pl.videos.length > 0) {
-            continue;
-          }
-
-          // Fetch all videos at once - pagination disabled
-          // TODO: Re-enable pagination by reducing limit and using nextPageToken
-          const { items } = await this.youtube.fetchPlaylistItems(pl.id, 50);
-
-          const mapped: VideoCard[] = (items as YouTubePlaylistItem[]).map(
-            (v: YouTubePlaylistItem) => ({
-              id: v.contentDetails?.videoId!,
-              playlistItemId: v.id,
-              title: v.snippet?.title || '',
-              description: v.snippet?.description || '',
-              duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
-              thumbnail: v.snippet?.thumbnails?.default?.url || '',
-              tags: v.snippet?.tags || [],
-              channelTitle: v.snippet?.channelTitle || '',
-              publishedAt: v.snippet?.publishedAt || '',
-              youtubeUrl: v.contentDetails?.videoId
-                ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}`
-                : '',
-            })
-          );
-
-          const curr = [...this.playlists()];
-          const idx = curr.findIndex((x) => x.id === pl.id);
-          if (idx >= 0) {
-            // Update playlist with videos and mark as modified
-            curr[idx] = {
-              ...curr[idx],
-              videos: mapped,
-            };
-            this.playlists.set(curr);
-            // Update the lastModifiedInApp timestamp in sort data
-            this.playlistService.updatePlaylistModified(pl.id);
-          }
-        } catch (e) {
-          console.error('Failed to load playlist items for', pl.id, e);
-        }
-      }
-
-      this.storage.savePlaylists(this.playlists());
+      await this._fetchAndProcessPlaylists();
 
       if (this.pollingInterval) clearInterval(this.pollingInterval);
       this.pollingInterval = setInterval(
@@ -348,29 +293,43 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     this.error.set(null);
     this.connecting.set(true);
     try {
-      // Use the same merge logic as connectYouTube to maintain date tracking
-      const { playlists } = await this.playlistService.fetchAndMergePlaylists(undefined, 50);
+      await this._fetchAndProcessPlaylists();
+    } catch (err: any) {
+      this.error.set(err?.message || String(err));
+    } finally {
+      this.connecting.set(false);
+    }
+  }
 
-      // Apply current sort order and initialize manual sort if needed
-      const sortedPlaylists = this.playlistService.applySort(playlists);
-      if (this.playlistService.playlistsSort.length === 0) {
-        this.playlistService.initializeManualSortFromPlaylists(sortedPlaylists);
-      }
+  /**
+   * Shared logic to fetch playlists and their items, then update the state.
+   * This reduces duplication between connectYouTube() and refresh().
+   */
+  private async _fetchAndProcessPlaylists(): Promise<void> {
+    // Fetch all playlists at once - pagination disabled
+    // TODO: Re-enable pagination by passing pageToken and reducing maxResults
+    const { playlists } = await this.playlistService.fetchAndMergePlaylists(undefined, 50);
 
-      this.playlists.set(sortedPlaylists);
-      // nextPageToken tracking disabled for now
-      this.playlistService.nextPageToken = undefined;
-      this.preloadedAllVideos = false;
+    // Apply current sort order and initialize manual sort if needed
+    const sortedPlaylists = this.playlistService.applySort(playlists);
+    if (this.playlistService.playlistsSort.length === 0) {
+      this.playlistService.initializeManualSortFromPlaylists(sortedPlaylists);
+    }
 
-      for (const pl of this.playlists()) {
+    // nextPageToken tracking disabled for now
+    this.playlistService.nextPageToken = undefined;
+    this.preloadedAllVideos = false;
+
+    // Fetch videos for each playlist
+    const playlistsWithVideos = await Promise.all(
+      sortedPlaylists.map(async (pl) => {
+        if (pl.videos && pl.videos.length > 0) {
+          return pl; // Videos already exist, no need to fetch
+        }
         try {
-          if (pl.videos && pl.videos.length > 0) {
-            continue;
-          }
-
           // Fetch all videos at once - pagination disabled
           const { items } = await this.youtube.fetchPlaylistItems(pl.id, 50);
-          const mapped: VideoCard[] = (items as YouTubePlaylistItem[]).map(
+          const mappedVideos: VideoCard[] = (items as YouTubePlaylistItem[]).map(
             (v: YouTubePlaylistItem) => ({
               id: v.contentDetails?.videoId!,
               playlistItemId: v.id,
@@ -386,31 +345,21 @@ export class OrganizerComponent implements OnInit, OnDestroy {
                 : '',
             })
           );
-
-          const curr = [...this.playlists()];
-          const idx = curr.findIndex((x) => x.id === pl.id);
-          if (idx >= 0) {
-            // Update playlist with videos and mark as modified
-            curr[idx] = {
-              ...curr[idx],
-              videos: mapped,
-            };
-            this.playlists.set(curr);
-            // Update the lastModifiedInApp timestamp in sort data
-            this.playlistService.updatePlaylistModified(pl.id);
-          }
+          // Update the lastModifiedInApp timestamp in sort data
+          this.playlistService.updatePlaylistModified(pl.id);
+          return { ...pl, videos: mappedVideos };
         } catch (e) {
           console.error('Failed to load playlist items for', pl.id, e);
+          return pl; // Return the playlist without videos on error
         }
-      }
+      })
+    );
 
-      this.storage.savePlaylists(this.playlists());
-      this.connecting.set(false);
-    } catch (err: any) {
-      this.error.set(err?.message || String(err));
-    } finally {
-      this.connecting.set(false);
-    }
+    // Set the playlists signal once with all the data
+    this.playlists.set(playlistsWithVideos);
+
+    // Save the final state to storage
+    this.storage.savePlaylists(this.playlists());
   }
 
   async fetchMorePlaylists() {
@@ -859,6 +808,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
     // Apply the dark mode class
     this.applyDarkMode();
+    this.themeInitialized.set(true);
   }
 
   toggleDarkMode(): void {

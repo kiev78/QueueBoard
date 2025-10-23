@@ -1,8 +1,9 @@
 <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
   <div class="container-fluid">
-    <span class="navbar-brand">QueueBoard — Organizer</span>
+    <span class="navbar-brand">Queue Board — Organizer</span>
     <div class="ms-auto d-flex gap-2 align-items-center">
       <!-- Dark mode toggle -->
+      @if (themeInitialized()) {
       <button
         class="btn btn-outline-light"
         (click)="toggleDarkMode()"
@@ -14,9 +15,10 @@
         <span>🌙</span>
         }
       </button>
+      }
 
-    @if (!hasPlaylists() || !youtube.isAuthenticated()) {
-        
+      @if (!hasPlaylists() || !youtube.isAuthenticated()) {
+
       <button
         class="btn btn-outline-light"
         (click)="connectYouTube()"
@@ -24,7 +26,7 @@
       >
         @if (!connecting()) { <span class="me-1">☁️</span> }
         @if (connecting()) { <span class="me-1">⏳</span> }
-        Connect YouTube
+           Connect YouTube
       </button>
 
       <button
@@ -35,7 +37,7 @@
       >
         Refresh
       </button>
-   
+
       <button
         class="btn btn-light text-danger"
         *ngIf="youtube.isAuthenticated() && !connecting()"
@@ -43,52 +45,26 @@
       >
         Sign Out
       </button>
-    }
+      }
     </div>
   </div>
 </nav>
 
 <div class="organizer-root">
   @if(!hasPlaylists()){
-  <!-- Welcome screen shown when no playlists are loaded and not in loading placeholder -->
-  <div class="welcome-screen">
-    <div class="welcome-card card">
-      <div class="card-body text-center">
-        <h2 class="card-title">Welcome to QueueBoard</h2>
-        <p class="lead">
-          Organize and play your YouTube playlists. Drag and drop videos between playlists, search
-          across titles, descriptions and tags, and minimize videos while continuing to browse.
-        </p>
-        <ul class="feature-list list-unstyled">
-          <li>• Import your YouTube playlists</li>
-          <li>• Reorder videos with drag & drop</li>
-          <li>• Minimize videos and resume playback</li>
-          <li>• Search and filter across playlists and video metadata</li>
-        </ul>
-
-        <div class="mt-3">
-          <button
-            class="btn btn-primary btn-lg"
-            (click)="connectYouTube()"
-            [disabled]="connecting()"
-          >
-            <span *ngIf="!connecting()">Connect YouTube</span>
-            <span *ngIf="connecting()">Connecting…</span>
-          </button>
-        </div>
-        <div class="mt-2 text-muted small">
-          We only request readonly access to your YouTube playlists.
-        </div>
-      </div>
-    </div>
-  </div>
-  }@else if (error()) { 
-    <div class="error" [textContent]="'Error: ' + error()"></div>
-  } 
-  @else{
-  <div class="controls">
+    <!-- Welcome screen shown when no playlists are loaded -->
+    <app-welcome-screen
+      [connecting]="connecting"
+      (connectYouTube)="connectYouTube()"
+    >
+    </app-welcome-screen>
+  }@else if (error()) {
+  <div class="error" [textContent]="'Error: ' + error()"></div>
+  } @else{
+  <div class="controls d-flex gap-2">
     <input
       #searchInput
+      class="form-control flex-grow-1"
       placeholder="Search videos, tags or playlists"
       [(ngModel)]="search"
       [disabled]="!hasPlaylists()"
@@ -97,7 +73,7 @@
     />
 
     <select
-      class="form-select sort-dropdown"
+      class="form-select sort-dropdown flex-grow-1"
       [ngModel]="currentSortOrder()"
       (ngModelChange)="onSortOrderChange($event)"
       [disabled]="!hasPlaylists()"
@@ -110,18 +86,15 @@
       }
     </select>
     <!-- Add playlist controls next to sort dropdown -->
-    <div class="add-playlist ms-2 d-flex align-items-center w-100">
+    <div class="add-playlist d-flex align-items-center flex-grow-1">
+      @if (!showAddPlaylist()) {
       <button
-        class="btn btn-outline-primary"
-        *ngIf="!showAddPlaylist()"
-        (click)="showAddPlaylist.set(true)"
-      >
-        + Add Playlist
-      </button>
-      @if (showAddPlaylist()) {
+        class="btn btn-outline-primary w-100"
+        (click)="showAddPlaylist.set(true)">+ Add Playlist</button>
+      } @else {
       <div class="d-flex gap-2 align-items-center w-100">
         <input
-          class="form-control form-control-sm"
+          class="form-control form-control-sm flex-grow-1"
           placeholder="Playlist name"
           [(ngModel)]="newPlaylistName"
         />
@@ -151,7 +124,7 @@
     cdkDropList
     [cdkDropListData]="filteredPlaylists()"
   >
-    @for (playlist of filteredPlaylists(); track trackById) {
+    @for (playlist of filteredPlaylists(); track playlist.id) {
     <div
       class="column"
       [style.borderTopColor]="playlist.color"
@@ -159,119 +132,113 @@
     >
       <!-- Regular Playlist Column -->
       @if (playlist.id !== 'load-more-sentinel') {
-        <div class="card playlist-card" cdkDrag>
-          <div class="card-header">
-            <div class="fw-bold">
-              {{ playlist.title }}
-              <span class="text-muted small">{{ playlist.videos.length }} videos</span>
-            </div>
+      <div class="card playlist-card" cdkDrag>
+        <div class="card-header">
+          <div class="fw-bold">
+            {{ playlist.title }}
+            <span class="text-muted small">{{ playlist.videos.length }} videos</span>
           </div>
-          <div class="card-body">
-            <div
-              class="video-list"
-              cdkDropList
-              [id]="playlist.id"
-              [cdkDropListData]="playlist.videos"
-              (cdkDropListDropped)="drop($event)"
-            >
-              @for (v of playlist.videos; track trackById) {
-              <div class="video-card" cdkDrag>
-                <div class="video-main">
-                  <img
-                    *ngIf="v.thumbnail"
-                    [src]="v.thumbnail"
-                    alt="thumb"
-                    (click)="openVideo(v)"
-                    role="button"
-                    tabindex="0"
-                    (keydown.enter)="openVideo(v)"
-                    [attr.aria-label]="'Play ' + (v.title || 'video')"
-                    [title]="'Play ' + (v.title || 'video')"
-                  />
-                  <div
-                    class="meta"
-                    (click)="toggleDetails(v)"
-                    role="button"
-                    tabindex="0"
-                    (keydown.enter)="toggleDetails(v)"
-                    [attr.aria-expanded]="v.detailsVisible"
-                    [attr.aria-controls]="'Toggle details-' + v.id"
-                    [title]="'Details ' + (v.title || 'video')"
-                  >
-                    <div class="title" [title]="'Details ' + (v.title || 'video')">
-                      {{ v.title }}
-                    </div>
-                    <div class="duration">{{ v.duration }}</div>
+        </div>
+        <div class="card-body">
+          <div
+            class="video-list"
+            cdkDropList
+            [id]="playlist.id"
+            [cdkDropListData]="playlist.videos"
+            (cdkDropListDropped)="drop($event)"
+          >
+            @for (v of playlist.videos; track v.id) {
+            <div class="video-card" cdkDrag>
+              <div class="video-main">
+                <img
+                  *ngIf="v.thumbnail"
+                  [src]="v.thumbnail"
+                  alt="thumb"
+                  (click)="openVideo(v)"
+                  role="button"
+                  tabindex="0"
+                  (keydown.enter)="openVideo(v)"
+                  [attr.aria-label]="'Play ' + (v.title || 'video')"
+                  [title]="'Play ' + (v.title || 'video')"
+                />
+                <div
+                  class="meta"
+                  (click)="toggleDetails(v)"
+                  role="button"
+                  tabindex="0"
+                  (keydown.enter)="toggleDetails(v)"
+                  [attr.aria-expanded]="v.detailsVisible"
+                  [attr.aria-controls]="'Toggle details-' + v.id"
+                  [title]="'Details ' + (v.title || 'video')"
+                >
+                  <div class="title" [title]="'Details ' + (v.title || 'video')">
+                    {{ v.title }}
                   </div>
-                  <a
-                    class="open"
-                    [href]="v.youtubeUrl"
-                    target="_blank"
-                    rel="noopener"
-                    aria-label="Open in new"
-                  >
-                    🔗
-                  </a>
+                  <div class="duration">{{ v.duration }}</div>
                 </div>
+                <a
+                  class="open"
+                  [href]="v.youtubeUrl"
+                  target="_blank"
+                  rel="noopener"
+                  aria-label="Open in new"
+                >
+                  🔗
+                </a>
+              </div>
 
-                <div class="video-details" [class.expanded]="v.detailsVisible">
-                  <div class="desc">{{ v.description }}</div>
-                  <div class="actions">
-                    <button class="btn btn-primary play-btn" (click)="openVideo(v)">▶️ Play</button>
-                  </div>
+              <div class="video-details" [class.expanded]="v.detailsVisible">
+                <div class="desc">{{ v.description }}</div>
+                <div class="actions">
+                  <button class="btn btn-primary play-btn" (click)="openVideo(v)">▶️ Play</button>
                 </div>
               </div>
-              <!-- Load more videos button - DISABLED (pagination removed) -->
-              <!-- TODO: Re-enable when pagination is restored -->
-              <!--
+            </div>
+            <!-- Load more videos button - DISABLED (pagination removed) -->
+            <!-- TODO: Re-enable when pagination is restored -->
+            <!--
               <div *ngIf="playlist.nextPageToken" class="load-more-videos-container">
                 <button class="btn btn-sm btn-outline-primary" (click)="loadMoreVideos(playlist)">Load More</button>
               </div>
               -->
-              }
-            </div>
-          </div>
-          <div class="card-footer playlist-footer">
-              @if (!addVideoVisible()[playlist.id]) {
-            <div
-              class="d-flex justify-content-between align-items-center"
-            >
-              <div class="text-muted small">{{ playlist.videos.length }} videos</div>
-              <button
-                class="btn btn-sm btn-outline-primary"
-                (click)="showAddVideoForm(playlist.id)"
-              >
-                + Add video
-              </button>
-            </div>
-            }
-            @if (addVideoVisible()[playlist.id]) {
-            <div class="d-flex gap-2 align-items-center">
-              <input
-                #videoUrlInput
-                class="form-control form-control-sm"
-                placeholder="YouTube URL or ID"
-                [disabled]="addVideoLoading()[playlist.id]"
-              />
-              <button
-                class="btn btn-sm btn-primary"
-                (click)="addVideoToPlaylistUI(playlist.id, videoUrlInput.value)"
-                [disabled]="addVideoLoading()[playlist.id]"
-              >
-                @if (!addVideoLoading()[playlist.id]) { <span>Add</span> }
-                @if (addVideoLoading()[playlist.id]) { <span>Adding…</span> }
-              </button>
-              <button
-                class="btn btn-sm btn-secondary"
-                (click)="hideAddVideoForm(playlist.id)"
-                [disabled]="addVideoLoading()[playlist.id]"
-              >
-                Cancel
-              </button>
-            </div>
             }
           </div>
         </div>
+        <div class="card-footer playlist-footer">
+          @if (!addVideoVisible()[playlist.id]) {
+          <div class="d-flex justify-content-between align-items-center">
+            <div class="text-muted small">{{ playlist.videos.length }} videos</div>
+            <button class="btn btn-sm btn-outline-primary" (click)="showAddVideoForm(playlist.id)">
+              + Add video
+            </button>
+          </div>
+          } @if (addVideoVisible()[playlist.id]) {
+          <div class="d-flex gap-2 align-items-center">
+            <input
+              #videoUrlInput
+              class="form-control form-control-sm"
+              placeholder="YouTube URL or ID"
+              [disabled]="addVideoLoading()[playlist.id]"
+            />
+            <button
+              class="btn btn-sm btn-primary"
+              (click)="addVideoToPlaylistUI(playlist.id, videoUrlInput.value)"
+              [disabled]="addVideoLoading()[playlist.id]"
+            >
+              @if (!addVideoLoading()[playlist.id]) { <span>Add</span> } @if
+              (addVideoLoading()[playlist.id]) { <span>Adding…</span> }
+            </button>
+            <button
+              class="btn btn-sm btn-secondary"
+              (click)="hideAddVideoForm(playlist.id)"
+              [disabled]="addVideoLoading()[playlist.id]"
+            >
+              Cancel
+            </button>
+          </div>
+          }
+        </div>
+      </div>
       }
 
       <!-- "Load More" Column - DISABLED (pagination removed) -->
@@ -291,21 +258,19 @@
   </div>
 
   @if (filteredPlaylists().length === 0) {
-  <div class="no-results">
-    No playlists or videos match your search.
-  </div>
+  <div class="no-results">No playlists or videos match your search.</div>
   }
 
   <!-- Overlay player with Angular YouTube Player -->
   @if (selectedVideo() && !isMinimized()) {
-    <app-video-player
-      [video]="selectedVideo()!"
-      (closePlayer)="closeVideo()"
-      (minimizePlayer)="minimizeVideo()"
-      (playerReady)="onPlayerReady($event)"
-      (stateChange)="onPlayerStateChange($event)"
-    >
-    </app-video-player>
+  <app-video-player
+    [video]="selectedVideo()!"
+    (closePlayer)="closeVideo()"
+    (minimizePlayer)="minimizeVideo()"
+    (playerReady)="onPlayerReady($event)"
+    (stateChange)="onPlayerStateChange($event)"
+  >
+  </app-video-player>
   }
 
   <!-- Minimized Videos Stack -->
@@ -319,5 +284,5 @@
     (stateChange)="onPlayerStateChange($event)"
   >
   </app-minimized-videos>
-}
+  }
 </div>
