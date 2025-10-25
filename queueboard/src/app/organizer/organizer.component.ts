@@ -136,6 +136,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
   // Sort-related properties
   currentSortOrder = signal<SortOrder>('custom');
+  
   get sortOptions(): SortOption[] {
     return this.sortService.sortOptions;
   }
@@ -781,9 +782,8 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     }
   }
 
-  // Removed private loadState() and saveState() methods as they are now handled by StorageService
-  // The calls to this.saveState() have been replaced with this.storage.setItem(StorageKey.STATE, JSON.stringify(this.playlists()));
-  // The call to this.loadState() has been replaced with this.storage.getItem(StorageKey.STATE);
+  // Removed private loadState() and saveState() methods.
+  // Playlist state is now managed by calling this.storage.getPlaylists() and this.storage.savePlaylists().
 
   // Dark mode functionality
   private initializeDarkMode(): void {
