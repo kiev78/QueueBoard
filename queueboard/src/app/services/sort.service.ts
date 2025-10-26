@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { PlaylistColumn, SortOption, SortOrder, VideoCard } from './playlist.service';
+import { StorageKey } from './StorageService';
 
 @Injectable({
   providedIn: 'root',
@@ -11,13 +12,12 @@ export class SortService {
     { value: 'recent', label: 'Recently Added' },
   ];
 
-  private readonly SORT_ORDER_KEY = 'queueboard_sort_order';
-  private readonly CUSTOM_SORT_ORDER_KEY = 'playlist_sort_order_v1';
-
   loadSortOrder(): SortOrder {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return 'custom';
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') { 
+      return 'custom'; 
+    }
     try {
-      const saved = localStorage.getItem(this.SORT_ORDER_KEY);
+      const saved = localStorage.getItem(StorageKey.PLAYLIST_SORT_ORDER);
       if (saved && ['custom', 'alphabetical', 'recent'].includes(saved)) {
         return saved as SortOrder;
       }
@@ -28,18 +28,18 @@ export class SortService {
   }
 
   saveSortOrder(sortOrder: SortOrder): void {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') { return; }
     try {
-      localStorage.setItem(this.SORT_ORDER_KEY, sortOrder);
+      localStorage.setItem(StorageKey.PLAYLIST_SORT_ORDER, sortOrder);
     } catch (e) {
       console.warn('Failed to save sort order:', e);
     }
   }
 
   loadCustomSortOrder(): string[] {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return [];
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') { return []; }
     try {
-      const saved = localStorage.getItem(this.CUSTOM_SORT_ORDER_KEY);
+      const saved = localStorage.getItem(StorageKey.SORT);
       return saved ? JSON.parse(saved) : [];
     } catch (e) {
       console.warn('Failed to load custom sort order:', e);
@@ -48,9 +48,9 @@ export class SortService {
   }
 
   saveCustomSortOrder(playlistIds: string[]): void {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') { return; }
     try {
-      localStorage.setItem(this.CUSTOM_SORT_ORDER_KEY, JSON.stringify(playlistIds));
+      localStorage.setItem(StorageKey.SORT, JSON.stringify(playlistIds));
     } catch (e) {
       console.warn('Failed to save custom sort order:', e);
     }

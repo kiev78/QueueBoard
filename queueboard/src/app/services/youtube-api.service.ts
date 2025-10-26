@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { environment } from '../../env/environment';
 import { YouTubeApiResponse, YouTubePlaylistItem } from './youtube-api.types';
+import { StorageKey } from './StorageService';
 
 declare global {
   interface Window {
@@ -21,8 +22,6 @@ export class YoutubeApiService {
   private gisLoaded = false;
   private tokenClient: any = null;
   private accessToken: string | null = null;
-  private tokenStorageKey = 'queueboard_gapi_token';
-
   clientId = environment.googleClientId;
   apiKey = environment.googleApiKey;
   discoveryDocs = ['https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest'];
@@ -46,7 +45,7 @@ export class YoutubeApiService {
 
     // restore token from session storage if available and still valid
     try {
-      const raw = sessionStorage.getItem(this.tokenStorageKey);
+      const raw = sessionStorage.getItem(StorageKey.GAPI_TOKEN);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.accessToken && parsed.expiresAt && parsed.expiresAt > Date.now()) {
@@ -56,7 +55,7 @@ export class YoutubeApiService {
             window.gapi.client.setToken({ access_token: this.accessToken });
           }
         } else {
-          sessionStorage.removeItem(this.tokenStorageKey);
+          sessionStorage.removeItem(StorageKey.GAPI_TOKEN);
         }
       }
     } catch (e) {
@@ -119,7 +118,7 @@ export class YoutubeApiService {
             const expiresAt = Date.now() + expiresIn * 1000;
             try {
               sessionStorage.setItem(
-                this.tokenStorageKey,
+                StorageKey.GAPI_TOKEN,
                 JSON.stringify({ accessToken: this.accessToken, expiresAt })
               );
             } catch (e) {
@@ -132,7 +131,7 @@ export class YoutubeApiService {
             callback(this.accessToken);
           } else {
             this.accessToken = null;
-            sessionStorage.removeItem(this.tokenStorageKey);
+            sessionStorage.removeItem(StorageKey.GAPI_TOKEN);
             callback(null);
           }
         },
@@ -163,13 +162,13 @@ export class YoutubeApiService {
 
   private getStoredToken(): { accessToken: string; expiresAt: number } | null {
     try {
-      const raw = sessionStorage.getItem(this.tokenStorageKey);
+      const raw = sessionStorage.getItem(StorageKey.GAPI_TOKEN);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (parsed && parsed.accessToken && parsed.expiresAt && parsed.expiresAt > Date.now()) {
         return parsed;
       }
-      sessionStorage.removeItem(this.tokenStorageKey);
+      sessionStorage.removeItem(StorageKey.GAPI_TOKEN);
     } catch (e) {
       // ignore
     }
@@ -179,7 +178,7 @@ export class YoutubeApiService {
   signOut() {
     this.accessToken = null;
     try {
-      sessionStorage.removeItem(this.tokenStorageKey);
+      sessionStorage.removeItem(StorageKey.GAPI_TOKEN);
     } catch (e) {}
     try {
       if (window?.gapi?.client) window.gapi.client.setToken(null);

@@ -20,7 +20,6 @@ import {
   DragDropModule,
 } from '@angular/cdk/drag-drop';
 import { FormsModule } from '@angular/forms';
-import { YouTubePlayerModule } from '@angular/youtube-player';
 import { YoutubeApiService } from '../services';
 import { environment } from '../../env/environment';
 import { VideoPlayerComponent } from './video-player/video-player.component';
@@ -174,6 +173,10 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
   constructor(public youtube: YoutubeApiService) {}
 
+  ngOnDestroy(): void {
+    clearInterval(this.pollingInterval);
+  }
+
   onSearchFocus() {
     if (this.preloadedAllVideos || this.preloading()) return;
     this.preloading.set(true);
@@ -257,12 +260,9 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         },
       ]);
     }
-  }
 
-  ngOnDestroy(): void {
-    if (this.pollingInterval) {
-      clearInterval(this.pollingInterval);
-    }
+    //get api token and checked if logged in
+      this.youtube.isAuthenticated();
   }
 
   async connectYouTube() {

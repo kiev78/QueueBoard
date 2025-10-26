@@ -17,8 +17,7 @@
       </button>
       }
 
-      @if (!hasPlaylists() || !youtube.isAuthenticated()) {
-
+      @if (!youtube.isAuthenticated()) {
       <button
         class="btn btn-outline-light"
         (click)="connectYouTube()"
@@ -28,20 +27,19 @@
         @if (connecting()) { <span class="me-1">⏳</span> }
            Connect YouTube
       </button>
-
+      } @else {
       <button
         class="btn btn-secondary"
-        *ngIf="hasPlaylists() && youtube.isAuthenticated()"
         (click)="refresh()"
-        [disabled]="connecting()"
+        [disabled]="connecting() || !hasPlaylists()"
       >
         Refresh
       </button>
 
       <button
         class="btn btn-light text-danger"
-        *ngIf="youtube.isAuthenticated() && !connecting()"
         (click)="youtube.signOut(); playlists.set([])"
+        [disabled]="connecting()"
       >
         Sign Out
       </button>

@@ -5,9 +5,9 @@ import { PlaylistColumn } from './playlist.service';
 export enum StorageKey {
   STATE = 'queueboard_state_v1',
   SORT = 'queueboard_sort_v1',
+  PLAYLIST_SORT_ORDER = 'queueboard_sort_order_v1',
   GAPI_TOKEN = 'queueboard_gapi_token',
   NEXT_PAGE_TOKEN = 'queueboard_next_page_token_v1',
-  PLAYLIST_SORT_ORDER = 'queueboard_playlist_sort_order_v1',
   DARK_MODE = 'queueboard_dark_mode_v1',
 }
 
