@@ -1,34 +1,45 @@
 import { Injectable } from '@angular/core';
-import { PlaylistColumn, SortOption, SortOrder, VideoCard } from './playlist.service';
+import { PlaylistColumn, VideoCard } from './playlist.service';
+import { PlaylistSortOrder, PLAYLIST_SORT_ORDER } from '../types/sort.types';
 import { StorageKey } from './StorageService';
+import { moveItemInArray } from '@angular/cdk/drag-drop';
 
 @Injectable({
   providedIn: 'root',
 })
 export class SortService {
-  readonly sortOptions: SortOption[] = [
-    { value: 'custom', label: 'Custom Order' },
-    { value: 'alphabetical', label: 'Alphabetical' },
-    { value: 'recent', label: 'Recently Added' },
+  readonly sortOptions: { value: PlaylistSortOrder; label: string }[] = [
+    { value: PLAYLIST_SORT_ORDER.CUSTOM, label: 'Custom Order' },
+    { value: PLAYLIST_SORT_ORDER.ALPHABETICAL, label: 'Alphabetical' },
+    { value: PLAYLIST_SORT_ORDER.RECENT, label: 'Recently Added' },
   ];
 
-  loadSortOrder(): SortOrder {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') { 
-      return 'custom'; 
+  loadSortOrder(): PlaylistSortOrder {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      return PLAYLIST_SORT_ORDER.CUSTOM;
     }
     try {
       const saved = localStorage.getItem(StorageKey.PLAYLIST_SORT_ORDER);
-      if (saved && ['custom', 'alphabetical', 'recent'].includes(saved)) {
-        return saved as SortOrder;
+      if (
+        saved &&
+        [
+          PLAYLIST_SORT_ORDER.CUSTOM,
+          PLAYLIST_SORT_ORDER.ALPHABETICAL,
+          PLAYLIST_SORT_ORDER.RECENT,
+        ].includes(saved as any)
+      ) {
+        return saved as PlaylistSortOrder;
       }
     } catch (e) {
       console.warn('Failed to load sort order:', e);
     }
-    return 'custom';
+    return PLAYLIST_SORT_ORDER.CUSTOM;
   }
 
-  saveSortOrder(sortOrder: SortOrder): void {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') { return; }
+  saveSortOrder(sortOrder: PlaylistSortOrder): void {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      return;
+    }
     try {
       localStorage.setItem(StorageKey.PLAYLIST_SORT_ORDER, sortOrder);
     } catch (e) {
@@ -37,10 +48,33 @@ export class SortService {
   }
 
   loadCustomSortOrder(): string[] {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') { return []; }
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      return [];
+    }
     try {
       const saved = localStorage.getItem(StorageKey.SORT);
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      // Legacy format: array of objects with id / sortId
+      if (
+        Array.isArray(parsed) &&
+        parsed.length &&
+        typeof parsed[0] === 'object' &&
+        parsed[0] !== null &&
+        'id' in parsed
+      ) {
+        const migratedIds = parsed
+          .map((p: any) => p.id)
+          .filter((id: any) => typeof id === 'string');
+        // Persist migrated simple array for future loads
+        localStorage.setItem(StorageKey.SORT, JSON.stringify(migratedIds));
+        return migratedIds;
+      }
+      // Current expected format: string[]
+      if (Array.isArray(parsed) && (parsed.length === 0 || typeof parsed[0] === 'string')) {
+        return parsed as string[];
+      }
+      return [];
     } catch (e) {
       console.warn('Failed to load custom sort order:', e);
       return [];
@@ -48,7 +82,9 @@ export class SortService {
   }
 
   saveCustomSortOrder(playlistIds: string[]): void {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') { return; }
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      return;
+    }
     try {
       localStorage.setItem(StorageKey.SORT, JSON.stringify(playlistIds));
     } catch (e) {
@@ -78,21 +114,21 @@ export class SortService {
     return sorted;
   }
 
-  sortPlaylists(playlists: PlaylistColumn[], sortOrder: SortOrder): PlaylistColumn[] {
+  sortPlaylists(playlists: PlaylistColumn[], sortOrder: PlaylistSortOrder): PlaylistColumn[] {
     const sorted = [...playlists];
 
     switch (sortOrder) {
-      case 'alphabetical':
+      case PLAYLIST_SORT_ORDER.ALPHABETICAL:
         sorted.sort((a, b) => a.title.localeCompare(b.title));
         break;
-      case 'recent':
+      case PLAYLIST_SORT_ORDER.RECENT:
         sorted.sort((a, b) => {
           const dateA = new Date(a.publishedAt || 0).getTime();
           const dateB = new Date(b.publishedAt || 0).getTime();
           return dateB - dateA; // desc order
         });
         break;
-      case 'custom':
+      case PLAYLIST_SORT_ORDER.CUSTOM:
       default:
         // For custom sort, the playlists should already be in the correct order
         // This is handled by applyCustomSort when loading
@@ -110,5 +146,24 @@ export class SortService {
       .filter((p) => p.id !== 'load-more-sentinel' && p.id !== 'loading')
       .map((p) => p.id);
     this.saveCustomSortOrder(playlistIds);
+  }
+
+  reorderPlaylistsAfterDrag(
+    playlists: PlaylistColumn[],
+    previousIndex: number,
+    currentIndex: number,
+    currentSortOrder: PlaylistSortOrder
+  ): { playlists: PlaylistColumn[]; newSortOrder: PlaylistSortOrder } {
+    const arr = [...playlists];
+    moveItemInArray(arr, previousIndex, currentIndex);
+
+    if (currentSortOrder !== PLAYLIST_SORT_ORDER.CUSTOM) {
+      // When dragging in a derived order, treat result as new custom baseline
+      this.updateCustomSortAfterDrop(arr);
+      return { playlists: arr, newSortOrder: PLAYLIST_SORT_ORDER.CUSTOM };
+    }
+
+    this.updateCustomSortAfterDrop(arr);
+    return { playlists: arr, newSortOrder: PLAYLIST_SORT_ORDER.CUSTOM };
   }
 }

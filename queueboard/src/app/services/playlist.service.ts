@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { YoutubeApiService } from './youtube-api.service';
 import { YouTubePlaylist, YouTubePlaylistItem } from './youtube-api.types';
-import { StorageKey, StorageService } from './StorageService';
+import { StorageService } from './StorageService';
 
 export interface VideoCard {
   id: string;
@@ -30,50 +30,20 @@ export interface PlaylistColumn {
   sortId?: number; // This will be set from PlaylistSort during sorting
 }
 
-export interface PlaylistSort {
-  id: string;
-  sortId: number;
-  publishedAt?: string; // YouTube's original playlist creation date
-  dateAddedToApp?: string; // When playlist was first added to our app
-  lastModifiedInApp?: string; // When playlist was last modified in our app
-}
-export type SortOrder = 'custom' | 'alphabetical' | 'recent';
-
-export interface SortOption {
-  value: SortOrder;
-  label: string;
-}
-
-// Legacy enum for backward compatibility - should be replaced with SortOrder
-export enum PlaylistSortOrder {
-  CUSTOM = 'custom',//default manual sort
-  ALPHABETICAL = 'alphabetical',
-  RECENT = 'recent',//youtube recently added
-}
-
-export interface PlaylistSortOption {
-  value: PlaylistSortOrder;
-  label: string;
-}
-
 @Injectable({
   providedIn: 'root',
 })
+/**
+ * Handles Fetching, merging, and persisting playlist + sort metadata
+ * Updating modification timestamps
+ * Creating playlists
+ * Applying sort orders
+ */
 export class PlaylistService {
   private youtube = inject(YoutubeApiService);
   private storage = inject(StorageService);
   public nextPageToken: string | null | undefined = undefined;
-  public playlistsSort: PlaylistSort[] = [];
-
-  // Available sort options
-  public readonly sortOptions: PlaylistSortOption[] = [
-    { value: PlaylistSortOrder.CUSTOM, label: 'My Custom Order' },
-    { value: PlaylistSortOrder.ALPHABETICAL, label: 'Alphabetical' },
-    { value: PlaylistSortOrder.RECENT, label: 'Recently Added in YouTube' },
-  ];
-
-  // Current sort order
-  public currentSortOrder: PlaylistSortOrder = PlaylistSortOrder.RECENT;
+  // Legacy sort state removed (handled by SortService).
 
   async fetchAllPlaylistItems(playlists: PlaylistColumn[], limit = 50): Promise<PlaylistColumn[]> {
     const updatedPlaylists: PlaylistColumn[] = [];
@@ -135,7 +105,6 @@ export class PlaylistService {
     const nextPageToken = undefined; // res?.nextPageToken (disabled)
 
     const stored = this.loadState();
-    const storedSort = this.loadSortState() || [];
     let merged: PlaylistColumn[] = [];
     const fetchedMap = new Map(fetched.map((f: PlaylistColumn) => [f.id, f]));
 
@@ -146,7 +115,7 @@ export class PlaylistService {
           // Playlist exists in both stored and fetched - merge
           return {
             ...s,
-            title: f.title || s.title,
+            // Sorting state removed; managed externally by SortService.
             description: f.description || s.description,
             color: s.color || f.color, // Prefer stored color
             publishedAt: f.publishedAt, // Always use the fresh timestamp from YouTube
@@ -165,239 +134,26 @@ export class PlaylistService {
       merged = fetched;
     }
 
-    // Update sort data with YouTube metadata and handle new playlists
-    this.updateSortDataWithYouTubeInfo(merged, res?.items || [], storedSort);
-
-    return { playlists: this.applySort(merged), nextPageToken };
+    // No internal sorting; ordering will be handled externally by SortService.
+    return { playlists: merged, nextPageToken };
   }
 
-  private updateSortDataWithYouTubeInfo(
-    playlists: PlaylistColumn[],
-    youtubeItems: any[],
-    storedSort: PlaylistSort[]
-  ): void {
-    const currentTime = new Date().toISOString();
-    const updatedSort: PlaylistSort[] = [...storedSort];
-    const sortMap = new Map(updatedSort.map((s) => [s.id, s]));
-
-    for (const playlist of playlists) {
-      const youtubeData = youtubeItems.find((p: any) => p.id === playlist.id);
-      const existingSort = sortMap.get(playlist.id);
-
-      if (existingSort) {
-        // Update existing sort entry with YouTube data if changed
-        const hasChanges =
-          youtubeData &&
-          (youtubeData.snippet?.title !== playlist.title ||
-            youtubeData.snippet?.description !== playlist.description);
-
-        existingSort.publishedAt = youtubeData?.snippet?.publishedAt || existingSort.publishedAt;
-        if (hasChanges) {
-          existingSort.lastModifiedInApp = currentTime;
-        }
-      } else {
-        // New playlist - create sort entry
-        const newSort: PlaylistSort = {
-          id: playlist.id,
-          sortId: updatedSort.length,
-          publishedAt: youtubeData?.snippet?.publishedAt,
-          dateAddedToApp: currentTime,
-          lastModifiedInApp: currentTime,
-        };
-        updatedSort.push(newSort);
-        sortMap.set(playlist.id, newSort);
-      }
-    }
-
-    // Save updated sort data
-    this.playlistsSort = updatedSort;
-    this.storage.setItem(StorageKey.SORT, updatedSort);
-  }
+  // Legacy updateSortDataWithYouTubeInfo removed.
 
   public loadState(): PlaylistColumn[] | null {
     const playlists = this.storage.getPlaylists();
 
-    // Check if we need to migrate old data to the sort format
-    if (playlists && playlists.length > 0) {
-      const currentTime = new Date().toISOString();
-      const storedSort = this.loadSortState() || [];
-      const sortMap = new Map(storedSort.map((s) => [s.id, s]));
-
-      // Check if any playlists don't have sort entries or have old date fields
-      const needsMigration = playlists.some(
-        (p) =>
-          !sortMap.has(p.id) ||
-          (p as any).dateAdded ||
-          (p as any).lastUpdated ||
-          (p as any).publishedAt
-      );
-
-      if (needsMigration) {
-        const migratedSort: PlaylistSort[] = [...storedSort];
-
-        playlists.forEach((playlist, index) => {
-          if (!sortMap.has(playlist.id)) {
-            // Create new sort entry for this playlist
-            migratedSort.push({
-              id: playlist.id,
-              sortId: index,
-              publishedAt: (playlist as any).publishedAt,
-              dateAddedToApp: (playlist as any).dateAdded || currentTime,
-              lastModifiedInApp: (playlist as any).lastUpdated || currentTime,
-            });
-          }
-        });
-
-        // Save the migrated sort data
-        this.storage.setItem(StorageKey.SORT, migratedSort);
-        this.playlistsSort = migratedSort;
-
-        // Clean the playlist data of old date fields
-        const cleanedPlaylists = playlists.map((p) => ({
-          id: p.id,
-          title: p.title,
-          description: p.description,
-          color: p.color,
-          videos: p.videos,
-          nextPageToken: p.nextPageToken,
-          sortId: p.sortId,
-          publishedAt: p.publishedAt || 0,
-        }));
-
-        this.storage.savePlaylists(cleanedPlaylists);
-        return cleanedPlaylists;
-      }
-    }
+    // Legacy migration removed; return stored playlists as-is.
 
     return playlists;
-  }
-
-  public loadSortState(): PlaylistSort[] | null {
-    return this.storage.getItem<PlaylistSort[]>(StorageKey.SORT, null);
-  }
-
-  public loadSortOrder(): PlaylistSortOrder {
-    return (
-      this.storage.getItem<PlaylistSortOrder>(
-        StorageKey.PLAYLIST_SORT_ORDER,
-        PlaylistSortOrder.RECENT
-      ) || PlaylistSortOrder.RECENT
-    );
-  }
-
-  public saveSortOrder(sortOrder: PlaylistSortOrder): void {
-    this.currentSortOrder = sortOrder;
-    this.storage.setItem(StorageKey.PLAYLIST_SORT_ORDER, sortOrder);
   }
 
   /**
    * Initialize manual sort order from current playlist order
    * This should be called after applying a sort method to sync the manual sort with the result
    */
-  public initializeManualSortFromPlaylists(playlists: PlaylistColumn[]): void {
-    // Create manual sort order based on current playlist order
-    this.playlistsSort = playlists.map((playlist, index) => ({
-      id: playlist.id,
-      sortId: index,
-    }));
-
-    // Update sortId on playlists to match
-    playlists.forEach((playlist, index) => {
-      playlist.sortId = index;
-    });
-
-    // Save to storage
-    this.storage.setItem(StorageKey.SORT, this.playlistsSort);
-  }
-
-  /**
-   * Apply the current sort order to the given playlists
-   * @param playlists The playlists to sort
-   * @return The sorted playlists
-   */
-   public applySort(playlists: PlaylistColumn[]): PlaylistColumn[] {
-    const sortedPlaylists = [...playlists];
-    const sortMap = new Map(this.playlistsSort.map((s) => [s.id, s]));
-
-    switch (this.currentSortOrder) {
-      case PlaylistSortOrder.ALPHABETICAL:
-        const alphabetical = sortedPlaylists.sort((a, b) => a.title.localeCompare(b.title));
-        // Update sortId to match new order
-        this.updateSortIdsAfterSorting(alphabetical);
-        return alphabetical;
-
-      case PlaylistSortOrder.RECENT:
-        // Sort by dateAddedToApp from sort data (newest first), fallback to title
-        const byDateAdded = sortedPlaylists.sort((a, b) => {
-          const sortA = sortMap.get(a.id);
-          const sortB = sortMap.get(b.id);
-          const dateA = sortA?.dateAddedToApp ? new Date(sortA.dateAddedToApp).getTime() : 0;
-          const dateB = sortB?.dateAddedToApp ? new Date(sortB.dateAddedToApp).getTime() : 0;
-          if (dateA === dateB) {
-            return a.title.localeCompare(b.title);
-          }
-          return dateB - dateA; // Newest first
-        });
-        this.updateSortIdsAfterSorting(byDateAdded);
-        return byDateAdded;
-
-   
-      case PlaylistSortOrder.CUSTOM:
-      default:
-        // Sort by lastModifiedInApp from sort data (most recently modified first), fallback to title
-        const byLastModified = sortedPlaylists.sort((a, b) => {
-          const sortA = sortMap.get(a.id);
-          const sortB = sortMap.get(b.id);
-          const dateA = sortA?.lastModifiedInApp ? new Date(sortA.lastModifiedInApp).getTime() : 0;
-          const dateB = sortB?.lastModifiedInApp ? new Date(sortB.lastModifiedInApp).getTime() : 0;
-          if (dateA === dateB) {
-            return a.title.localeCompare(b.title);
-          }
-          return dateB - dateA; // Most recently modified first
-        });
-        this.updateSortIdsAfterSorting(byLastModified);
-        return byLastModified;
-    }
-  }
-
-  private updateSortIdsAfterSorting(sortedPlaylists: PlaylistColumn[]): void {
-    // Update both the sort data and the playlist sortId to match the new order
-    sortedPlaylists.forEach((playlist, index) => {
-      playlist.sortId = index;
-      const sortEntry = this.playlistsSort.find((s) => s.id === playlist.id);
-      if (sortEntry) {
-        sortEntry.sortId = index;
-      }
-    });
-
-    // Save the updated sort order
-    this.storage.setItem(StorageKey.SORT, this.playlistsSort);
-  }
-
-  public updatePlaylistModified(playlistId: string): void {
-    const sortEntry = this.playlistsSort.find((s) => s.id === playlistId);
-    if (sortEntry) {
-      sortEntry.lastModifiedInApp = new Date().toISOString();
-      this.storage.setItem(StorageKey.SORT, this.playlistsSort);
-    }
-  }
-
-  public updateMultiplePlaylistsModified(playlistIds: string[]): void {
-    const currentTime = new Date().toISOString();
-    let updated = false;
-
-    playlistIds.forEach((playlistId) => {
-      const sortEntry = this.playlistsSort.find((s) => s.id === playlistId);
-      if (sortEntry) {
-        sortEntry.lastModifiedInApp = currentTime;
-        updated = true;
-      }
-    });
-
-    if (updated) {
-      this.storage.setItem(StorageKey.SORT, this.playlistsSort);
-    }
-  }
+  // Removed legacy sort-related methods (initializeManualSortFromPlaylists, applySort,
+  // updateSortIdsAfterSorting, updatePlaylistModified, updateMultiplePlaylistsModified).
 
   /**
    * Create a new playlist both locally and on YouTube (if authenticated).
@@ -419,16 +175,7 @@ export class PlaylistService {
     const merged = [newPl, ...current];
     this.storage.savePlaylists(merged);
 
-    // Update sort metadata
-    const now = new Date().toISOString();
-    const sortEntry: PlaylistSort = {
-      id: newPl.id,
-      sortId: this.playlistsSort.length,
-      dateAddedToApp: now,
-      lastModifiedInApp: now,
-    } as PlaylistSort;
-    this.playlistsSort.push(sortEntry);
-    this.storage.setItem(StorageKey.SORT, this.playlistsSort);
+    // Legacy sort metadata removed; SortService will manage custom order persistence.
 
     // Attempt to create on YouTube if authenticated
     try {
@@ -445,12 +192,7 @@ export class PlaylistService {
           const replaced = merged.map((p) => (p.id === id ? newPl : p));
           this.storage.savePlaylists(replaced);
 
-          // Update sort entry id
-          const sortIdx = this.playlistsSort.findIndex((s) => s.id === id);
-          if (sortIdx >= 0) {
-            this.playlistsSort[sortIdx].id = res.id;
-            this.storage.setItem(StorageKey.SORT, this.playlistsSort);
-          }
+          // No legacy sort metadata to update after purge.
         }
       }
     } catch (e) {

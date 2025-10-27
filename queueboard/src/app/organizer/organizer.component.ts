@@ -34,14 +34,9 @@ import { StorageKey, StorageService } from '../services/StorageService';
 import { ErrorHandlerService } from '../services/ErrorHandlerService';
 import { PlayerManagerService } from '../services/PlayerManagerService';
 import { InputSanitizerService } from '../services/InputSanitizerService';
-import {
-  PlaylistColumn,
-  PlaylistService,
-  VideoCard,
-  SortOrder, 
-  SortOption,
-} from '../services/playlist.service';
+import { PlaylistColumn, PlaylistService, VideoCard } from '../services/playlist.service';
 import { SortService } from '../services/sort.service';
+import { PlaylistSortOrder, PLAYLIST_SORT_ORDER } from '../types/sort.types';
 import { WelcomeScreenComponent } from './welcome-screen/welcome-screen.component';
 @Component({
   selector: 'app-organizer',
@@ -70,8 +65,8 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   private playlistService = inject(PlaylistService);
   private sortService = inject(SortService);
   private _search = signal('');
-  
-// Add this ViewChild decorator to get a reference to the search input
+
+  // Add this ViewChild decorator to get a reference to the search input
   @ViewChild('searchInput') searchInput?: ElementRef<HTMLInputElement>;
 
   get search(): string {
@@ -114,8 +109,14 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         .filter((x): x is PlaylistColumn => x !== null);
     }
 
-    // Apply sorting using SortService
-    const sorted = this.sortService.sortPlaylists(filtered, this.currentSortOrder());
+    // Apply sorting using SortService. For custom order, first apply stored custom order.
+    let sorted: PlaylistColumn[];
+    if (this.currentSortOrder() === PLAYLIST_SORT_ORDER.CUSTOM) {
+      // Ensure playlists appear in persisted custom order even after fetch/refresh
+      sorted = this.sortService.applyCustomSort(filtered);
+    } else {
+      sorted = this.sortService.sortPlaylists(filtered, this.currentSortOrder());
+    }
 
     // Pagination UI removed - "Load More" sentinel disabled
     // TODO: Re-enable by uncommenting the following block when pagination is restored:
@@ -134,9 +135,9 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   loadingMore = signal(false);
 
   // Sort-related properties
-  currentSortOrder = signal<SortOrder>('custom');
-  
-  get sortOptions(): SortOption[] {
+  currentSortOrder = signal<PlaylistSortOrder>(PLAYLIST_SORT_ORDER.CUSTOM);
+
+  get sortOptions() {
     return this.sortService.sortOptions;
   }
 
@@ -201,11 +202,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     // Skip when typing in inputs, textareas, or contenteditable elements
     const target = event.target as HTMLElement;
     const tagName = target.tagName;
-    if (
-      tagName === 'INPUT' ||
-      tagName === 'TEXTAREA' ||
-      target.isContentEditable
-    ) {
+    if (tagName === 'INPUT' || tagName === 'TEXTAREA' || target.isContentEditable) {
       return;
     }
 
@@ -227,11 +224,11 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     // Initialize dark mode from localStorage or system preference
     this.initializeDarkMode();
     this.themeInitialized.set(true);
- 
+
     // Load saved sort order using SortService (which uses StorageService)
     const savedSortOrder = this.sortService.loadSortOrder();
     this.currentSortOrder.set(savedSortOrder);
-    
+
     const saved = this.storage.getPlaylists();
 
     if (saved) {
@@ -262,7 +259,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     }
 
     //get api token and checked if logged in
-      this.youtube.isAuthenticated();
+    this.youtube.isAuthenticated();
   }
 
   async connectYouTube() {
@@ -310,12 +307,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     // Fetch all playlists at once - pagination disabled
     // TODO: Re-enable pagination by passing pageToken and reducing maxResults
     const { playlists } = await this.playlistService.fetchAndMergePlaylists(undefined, 50);
-
-    // Apply current sort order and initialize manual sort if needed
-    const sortedPlaylists = this.playlistService.applySort(playlists);
-    if (this.playlistService.playlistsSort.length === 0) {
-      this.playlistService.initializeManualSortFromPlaylists(sortedPlaylists);
-    }
+    // Sorting handled exclusively by SortService; legacy manual sort initialization removed.
 
     // nextPageToken tracking disabled for now
     this.playlistService.nextPageToken = undefined;
@@ -323,7 +315,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
     // Fetch videos for each playlist
     const playlistsWithVideos = await Promise.all(
-      sortedPlaylists.map(async (pl) => {
+      playlists.map(async (pl) => {
         if (pl.videos && pl.videos.length > 0) {
           return pl; // Videos already exist, no need to fetch
         }
@@ -346,8 +338,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
                 : '',
             })
           );
-          // Update the lastModifiedInApp timestamp in sort data
-          this.playlistService.updatePlaylistModified(pl.id);
           return { ...pl, videos: mappedVideos };
         } catch (e) {
           console.error('Failed to load playlist items for', pl.id, e);
@@ -443,116 +433,45 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   }
 
   openVideo(v: VideoCard) {
-    // If there's a currently playing (but minimized) video, close it.
-    if (this.selectedVideo()) {
-      this.closeVideo(this.selectedVideo()!);
-    }
-
-    // If the clicked video was in the minimized list, remove it.
-    this.minimizedVideos.update((videos) => videos.filter((vid) => vid.id !== v.id));
-
-    this.selectedVideo.set(v);
-    this.playerReady.set(false);
-  }
-
-  closeVideo(video?: VideoCard) {
-    const videoToClose = video || this.selectedVideo();
-    if (!videoToClose) return;
-
-    // If the video to close is the currently selected one
-    if (this.selectedVideo()?.id === videoToClose.id) {
-      const player = this.playerInstances.get(videoToClose.id);
-      player?.destroy();
-      this.playerInstances.delete(videoToClose.id);
-      this.selectedVideo.set(null);
-    }
-
-    // Remove from minimized list
-    this.minimizedVideos.update((videos) => videos.filter((v) => v.id !== videoToClose.id));
-
-    this.playerReady.set(false);
-    this.playerState.set(null);
+    this.playerManager.open(v);
+    // Temporary bridge until local signals removed:
+    this.selectedVideo.set(this.playerManager.selectedVideo());
   }
 
   minimizeVideo() {
-    const videoToMinimize = this.selectedVideo();
-    if (!videoToMinimize) return;
-
-    const player = this.playerInstances.get(videoToMinimize.id);
-    const currentTime = player?.getCurrentTime() ?? 0;
-
-    const minimizedVideo: VideoCard = {
-      ...videoToMinimize,
-      isMinimized: true,
-      resumeTime: currentTime,
-    };
-
-    this.minimizedVideos.update((videos) => {
-      if (videos.some((v) => v.id === minimizedVideo.id)) {
-        return videos;
-      }
-      return [...videos, minimizedVideo];
-    });
-
-    // Close the main player
-    this.selectedVideo.set(null);
-    player?.destroy();
-    this.playerInstances.delete(videoToMinimize.id);
+    this.playerManager.minimize();
+    this.selectedVideo.set(this.playerManager.selectedVideo());
+    this.minimizedVideos.set(this.playerManager.minimizedVideos());
   }
 
-  restoreVideo(video: VideoCard) {
-    if (this.selectedVideo()?.id === video.id) {
-      // It's already the selected one, just un-minimize
-      this.selectedVideo.update((v) => ({ ...v!, isMinimized: false }));
-      this.minimizedVideos.update((videos) => videos.filter((v) => v.id !== video.id));
-    } else {
-      // A different video is being restored, so open it
-      this.openVideo(video);
-    }
+  restoreVideo(v: VideoCard) {
+    this.playerManager.restore(v.id);
+    this.selectedVideo.set(this.playerManager.selectedVideo());
+    this.minimizedVideos.set(this.playerManager.minimizedVideos());
   }
 
-  onPlayerReady(event: YT.PlayerEvent) {
-    const player = event.target;
-    const videoUrl = player.getVideoUrl(); // e.g., "https://www.youtube.com/watch?v=VIDEO_ID&feature=..."
-    const videoId = new URL(videoUrl).searchParams.get('v');
-
-    if (!videoId) {
-      console.error('[onPlayerReady] Could not extract videoId from URL:', videoUrl);
-      return;
-    }
-
-    this.playerInstances.set(videoId, player);
-
-    const video =
-      this.selectedVideo()?.id === videoId
-        ? this.selectedVideo()
-        : this.minimizedVideos().find((v) => v.id === videoId);
-
-    const startSeconds = Math.floor(video?.resumeTime ?? 0);
-
-    if (startSeconds > 0) {
-      player.seekTo(startSeconds, true);
-    }
-    player.playVideo();
-    this.playerReady.set(true); // Keep for main player controls
-  }
-
-  onPlayerStateChange(event: YT.PlayerEvent) {
-    this.playerState.set(event.data);
+  closeVideo(video?: VideoCard) {
+    this.playerManager.close(video?.id);
+    this.selectedVideo.set(this.playerManager.selectedVideo());
+    this.minimizedVideos.set(this.playerManager.minimizedVideos());
   }
 
   togglePlayPause(video: VideoCard) {
-    const player = this.playerInstances.get(video.id);
-    if (!player) return;
+    this.playerManager.togglePlayPause(video.id);
+    this.playerState.set(this.playerManager.playerState());
+  }
 
-    const currentState = player.getPlayerState();
-    if (currentState === YT.PlayerState.PLAYING || currentState === YT.PlayerState.BUFFERING) {
-      player.pauseVideo();
-    } else {
-      player.playVideo();
-    }
-    // Update the global state so the UI for the minimized icon can react.
-    this.playerState.set(player.getPlayerState());
+  onPlayerReady(e: YT.PlayerEvent) {
+    const id = new URL(e.target.getVideoUrl()).searchParams.get('v');
+    if (!id) return;
+    this.playerManager.registerPlayer(id, e.target);
+    this.playerReady.set(this.playerManager.playerReady());
+  }
+
+  onPlayerStateChange(e: YT.PlayerEvent) {
+    // Use service helper to update player state signal
+    this.playerManager.setPlayerState(e.data);
+    this.playerState.set(this.playerManager.playerState());
   }
 
   drop(event: CdkDragDrop<VideoCard[]>) {
@@ -562,10 +481,8 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     const curr = [...this.playlists()];
 
     if (event.previousContainer === event.container) {
-      // Moving within same playlist - update lastModifiedInApp
+      // Moving within same playlist
       moveItemInArray(event.container.data, event.previousIndex, event.currentIndex);
-      // Update the lastModifiedInApp timestamp in sort data
-      this.playlistService.updatePlaylistModified(event.container.id);
     } else {
       const videoToMove = event.previousContainer.data[event.previousIndex];
       const sourcePlaylistId = event.previousContainer.id;
@@ -577,9 +494,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         event.previousIndex,
         event.currentIndex
       );
-
-      // Update lastModifiedInApp for both source and destination playlists
-      this.playlistService.updateMultiplePlaylistsModified([sourcePlaylistId, destPlaylistId]);
 
       this.syncMove(videoToMove, sourcePlaylistId, destPlaylistId).catch((err) => {
         console.error('Failed to sync video move with YouTube:', err);
@@ -598,33 +512,42 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   }
 
   dropPlaylist(event: CdkDragDrop<PlaylistColumn[]>) {
-    const currentSort = this.currentSortOrder();
+    const searchActive = (this.search || '').trim().length > 0;
+    const mode = this.currentSortOrder();
+    const raw = [...this.playlists()];
+    const visible = [...this.filteredPlaylists()];
 
-    if (currentSort === 'custom') {
-      // In custom mode: update the raw playlists order directly
-      const arr = [...this.playlists()];
-      moveItemInArray(arr, event.previousIndex, event.currentIndex);
-      this.playlists.set(arr);
-
-      // Update custom sort order storage
-      this.sortService.updateCustomSortAfterDrop(arr);
-    } else {
-      // In alphabetical/recent mode: capture current filtered order and switch to custom
-      const currentFiltered = [...this.filteredPlaylists()];
-      moveItemInArray(currentFiltered, event.previousIndex, event.currentIndex);
-
-      // Set this as the new raw playlists order
-      this.playlists.set(currentFiltered);
-
-      // Update custom sort order storage
-      this.sortService.updateCustomSortAfterDrop(currentFiltered);
-
-      // Switch to custom mode
-      this.currentSortOrder.set('custom');
-      this.sortService.saveSortOrder('custom');
+    if (!searchActive) {
+      let working = mode === PLAYLIST_SORT_ORDER.CUSTOM ? raw : visible;
+      moveItemInArray(working, event.previousIndex, event.currentIndex);
+      const cleaned = working.filter((p) => p.id !== 'load-more-sentinel' && p.id !== 'loading');
+      this.sortService.saveCustomSortOrder(cleaned.map((p) => p.id));
+      this.playlists.set(working);
+      if (mode !== PLAYLIST_SORT_ORDER.CUSTOM) {
+        this.currentSortOrder.set(PLAYLIST_SORT_ORDER.CUSTOM);
+        this.sortService.saveSortOrder(PLAYLIST_SORT_ORDER.CUSTOM);
+      }
+      this.storage.savePlaylists(this.playlists());
+      return;
     }
 
-    // Save the updated state
+    // Search-active partial reorder:
+    // Reorder only the visible subset, then merge back with unaffected playlists.
+    const subset = [...visible];
+    moveItemInArray(subset, event.previousIndex, event.currentIndex);
+    const subsetIds = new Set(subset.map((p) => p.id));
+    const unaffected = raw.filter((p) => !subsetIds.has(p.id));
+
+    // Merge strategy: keep reordered subset at top followed by unaffected in original order.
+    // Future enhancement: maintain original relative gap positions.
+    const merged = [...subset, ...unaffected];
+    const cleanedMerged = merged.filter((p) => p.id !== 'load-more-sentinel' && p.id !== 'loading');
+    this.sortService.saveCustomSortOrder(cleanedMerged.map((p) => p.id));
+    this.playlists.set(merged);
+    if (mode !== PLAYLIST_SORT_ORDER.CUSTOM) {
+      this.currentSortOrder.set(PLAYLIST_SORT_ORDER.CUSTOM);
+      this.sortService.saveSortOrder(PLAYLIST_SORT_ORDER.CUSTOM);
+    }
     this.storage.savePlaylists(this.playlists());
   }
 
@@ -636,7 +559,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     video.detailsVisible = !video.detailsVisible;
   }
 
-  onSortOrderChange(sortOrder: SortOrder) {
+  onSortOrderChange(sortOrder: PlaylistSortOrder) {
     this.currentSortOrder.set(sortOrder);
     this.sortService.saveSortOrder(sortOrder);
 
@@ -652,11 +575,14 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     try {
       const created = await this.playlistService.createPlaylist(name, 'Created from QueueBoard');
 
-      // Insert at the top of playlists and reapply sort
+      // Insert at the top of playlists; sorting handled by computed filteredPlaylists
       const curr = [...this.playlists()];
       curr.unshift(created);
-      const sorted = this.playlistService.applySort(curr);
-      this.playlists.set(sorted);
+      this.playlists.set(curr);
+      // If currently in custom mode, persist updated order including new playlist at front
+      if (this.currentSortOrder() === PLAYLIST_SORT_ORDER.CUSTOM) {
+        this.sortService.updateCustomSortAfterDrop(this.playlists());
+      }
 
       // Reset UI
       this.newPlaylistName.set('');
@@ -735,7 +661,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
           if (idx >= 0) {
             curr[idx] = { ...curr[idx], videos: mapped };
             this.playlists.set(curr);
-            this.playlistService.updatePlaylistModified(playlistId); // Still update the service's internal state
             this.storage.savePlaylists(this.playlists());
           }
         } catch (e) {
@@ -767,7 +692,6 @@ export class OrganizerComponent implements OnInit, OnDestroy {
           const updated = { ...curr[idx], videos: [...(curr[idx].videos || []), newVideo] };
           curr[idx] = updated;
           this.playlists.set(curr);
-          this.playlistService.updatePlaylistModified(playlistId);
           this.storage.savePlaylists(this.playlists());
         }
       }
@@ -792,7 +716,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       this.isDarkMode.set(false); // Default to light mode on server
       return;
     }
-    
+
     // Check for saved preference
     const savedDarkMode = this.storage.getItem(StorageKey.DARK_MODE);
 
