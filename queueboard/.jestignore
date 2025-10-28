@@ -1,0 +1,15 @@
+# Ignore build directories
+build/
+dist/
+obj/
+
+# Ignore node_modules (Jest already ignores it by default, but you can customize this further)
+node_modules/
+
+# Ignore specific files
+*.log
+*.tmp
+
+# Ignore large or irrelevant directories
+coverage/
+public/

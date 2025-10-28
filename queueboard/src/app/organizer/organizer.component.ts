@@ -32,6 +32,7 @@ import {
 import { PollingService } from '../services/PollingService';
 import { StorageKey, StorageService } from '../services/StorageService';
 import { ErrorHandlerService, AppError, ErrorSeverity } from '../services/ErrorHandlerService';
+import { ToastService } from '../services/toast.service';
 import { PlayerManagerService } from '../services/PlayerManagerService';
 import { InputSanitizerService } from '../services/InputSanitizerService';
 import { PlaylistColumn, PlaylistService, VideoCard } from '../services/playlist.service';
@@ -135,8 +136,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   error = signal<string | null>(null);
   loadingMore = signal(false);
   authenticated = signal(false);
-  // Toast notifications (simple ephemeral messages with severity)
-  toastMessages = signal<{ id: string; message: string; severity: ErrorSeverity }[]>([]);
+  toast = inject(ToastService); // public for template access
 
   // Sort-related properties
   currentSortOrder = signal<PlaylistSortOrder>(PLAYLIST_SORT_ORDER.CUSTOM);
@@ -272,7 +272,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       if (!this.hasPlaylists()) {
         this.refresh();
       } else {
-        this.showToast('Already connected', ErrorSeverity.INFO, 2000);
+        this.toast.show('Already connected', ErrorSeverity.INFO, 2000);
       }
       return;
     }
@@ -283,7 +283,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       const token = await this.youtube.requestAccessToken();
       if (!token) {
         const appErr = this.errorHandler.handleError('User did not grant access', 'auth');
-        this.showToast(appErr.message, appErr.severity);
+        this.toast.show(appErr.message, appErr.severity);
         return;
       }
       await this._fetchAndProcessPlaylists();
@@ -295,7 +295,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       );
     } catch (err) {
       const appErr = this.errorHandler.handleYouTubeError(err, 'connectYouTube');
-      this.showToast(appErr.message, appErr.severity);
+      this.toast.show(appErr.message, appErr.severity);
     } finally {
       this.connecting.set(false);
     }
@@ -308,7 +308,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       await this._fetchAndProcessPlaylists();
     } catch (err) {
       const appErr = this.errorHandler.handleYouTubeError(err, 'refreshPlaylists');
-      this.showToast(appErr.message, appErr.severity);
+      this.toast.show(appErr.message, appErr.severity);
     } finally {
       this.connecting.set(false);
     }
@@ -514,7 +514,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         console.error('Failed to sync video move with YouTube:', err);
         const appErr = this.errorHandler.handleError(err, 'moveVideo');
         const msg = `Failed to move video: ${err?.message || String(err)}`;
-        this.showToast(msg, appErr.severity);
+        this.toast.show(msg, appErr.severity);
       });
     }
     this.storage.savePlaylists(this.playlists());
@@ -608,7 +608,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     } catch (e) {
       console.error('Failed to create playlist', e);
       const appErr = this.errorHandler.handleYouTubeError(e, 'createPlaylist');
-      this.showToast(appErr.message, appErr.severity);
+      this.toast.show(appErr.message, appErr.severity);
     } finally {
       this.connecting.set(false);
     }
@@ -649,7 +649,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         'Could not parse a YouTube video id from the provided value.',
         'addVideo'
       );
-      this.showToast(appErr.message, appErr.severity);
+      this.toast.show(appErr.message, appErr.severity);
       return;
     }
 
@@ -720,7 +720,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     } catch (err) {
       console.error('Failed to add video to playlist', err);
       const appErr = this.errorHandler.handleYouTubeError(err, 'addVideoToPlaylist');
-      this.showToast(appErr.message, appErr.severity);
+      this.toast.show(appErr.message, appErr.severity);
     } finally {
       // clear loading for this playlist
       this.addVideoLoading.update((m) => ({ ...(m || {}), [playlistId]: false }));
@@ -747,7 +747,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     try {
       this.storage.clear();
     } catch {}
-    this.showToast('Signed out', ErrorSeverity.INFO, 2500);
+    this.toast.show('Signed out', ErrorSeverity.INFO, 2500);
   }
 
   private attemptSilentAuth() {
@@ -766,11 +766,11 @@ export class OrganizerComponent implements OnInit, OnDestroy {
             this._fetchAndProcessPlaylists()
               .catch((err) => {
                 const appErr = this.errorHandler.handleYouTubeError(err, 'silentAuthLoad');
-                this.showToast(appErr.message, appErr.severity);
+                this.toast.show(appErr.message, appErr.severity);
               })
               .finally(() => this.connecting.set(false));
           }
-          this.showToast('Session restored', ErrorSeverity.INFO, 2500);
+          this.toast.show('Session restored', ErrorSeverity.INFO, 2500);
         }
       })
       .catch(() => {
@@ -778,24 +778,5 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       });
   }
 
-  // Toast API
-  showToast(
-    message: string,
-    severity: ErrorSeverity = ErrorSeverity.ERROR,
-    durationMs: number = 4000
-  ) {
-    if (!message) return;
-    const id = 't-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-    const entry = { id, message, severity };
-    this.toastMessages.update((curr) => [...curr, entry]);
-    // Critical errors persist longer
-    const timeout = severity === ErrorSeverity.CRITICAL ? durationMs * 2 : durationMs;
-    setTimeout(() => {
-      this.toastMessages.update((curr) => curr.filter((t) => t.id !== id));
-    }, timeout);
-  }
-
-  dismissToast(id: string) {
-    this.toastMessages.update((curr) => curr.filter((t) => t.id !== id));
-  }
+  // Legacy toast API removed; using ToastService
 }

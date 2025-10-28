@@ -91,7 +91,7 @@ describe('SortService', () => {
       playlists,
       2,
       0,
-      PLAYLIST_SORT_ORDER.ALPHABETICAL
+      PLAYLIST_SORT_ORDER.ALPHABETICAL,
     );
     expect(reordered.map((p) => p.id)).toEqual(['pl-3', 'pl-1', 'pl-2']);
     const stored = JSON.parse(localStorage.getItem(StorageKey.SORT) || '[]');

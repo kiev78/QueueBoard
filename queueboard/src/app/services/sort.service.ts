@@ -61,7 +61,7 @@ export class SortService {
         parsed.length &&
         typeof parsed[0] === 'object' &&
         parsed[0] !== null &&
-        'id' in parsed
+        'id' in parsed[0]
       ) {
         const migratedIds = parsed
           .map((p: any) => p.id)

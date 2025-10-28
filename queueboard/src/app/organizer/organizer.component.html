@@ -277,17 +277,17 @@
 
 <!-- Toast notifications -->
 <div class="toast-container" aria-live="polite" aria-atomic="true">
-  @for (t of toastMessages(); track t.id) {
+  @for (t of toast.toasts(); track t.id) {
   <div
     class="toast-item"
     [class.toast-info]="t.severity === 'info'"
     [class.toast-warning]="t.severity === 'warning'"
     [class.toast-error]="t.severity === 'error'"
     [class.toast-critical]="t.severity === 'critical'"
-    role="alert"
+    [attr.role]="t.severity !== 'info' ? 'alert' : null"
   >
     <div class="toast-message">{{ t.message }}</div>
-    <button class="toast-close" (click)="dismissToast(t.id)" aria-label="Dismiss">×</button>
+    <button class="toast-close" (click)="toast.dismiss(t.id)" aria-label="Dismiss">×</button>
   </div>
   }
 </div>

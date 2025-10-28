@@ -5,7 +5,7 @@ export enum ErrorSeverity {
   INFO = 'info',
   WARNING = 'warning',
   ERROR = 'error',
-  CRITICAL = 'critical'
+  CRITICAL = 'critical',
 }
 
 export interface AppError {
@@ -21,11 +21,16 @@ export interface AppError {
  * Safely formats and sanitizes error messages for display.
  */
 @Injectable({
-  providedIn: 'root'
+  providedIn: 'root',
 })
 export class ErrorHandlerService {
   private readonly MAX_USER_MESSAGE_LENGTH = 500;
-  private sanitizer = inject(InputSanitizerService);
+  private sanitizer: InputSanitizerService;
+
+  // Allow manual DI for Jest tests (outside Angular inject context)
+  constructor(sanitizer?: InputSanitizerService) {
+    this.sanitizer = sanitizer ?? inject(InputSanitizerService);
+  }
 
   /**
    * Handles errors and returns a safe, user-friendly message
@@ -40,7 +45,7 @@ export class ErrorHandlerService {
       severity,
       timestamp: new Date(),
       context,
-      originalError: error
+      originalError: error,
     };
   }
 
@@ -74,7 +79,9 @@ export class ErrorHandlerService {
           severity = ErrorSeverity.ERROR;
           break;
         default:
-          message = `YouTube error: ${this.sanitizer.escapeHtml(apiError.message || 'Unknown error')}`;
+          message = `YouTube error: ${this.sanitizer.escapeHtml(
+            apiError.message || 'Unknown error'
+          )}`;
       }
     }
 
@@ -83,7 +90,7 @@ export class ErrorHandlerService {
       severity,
       timestamp: new Date(),
       context: operation,
-      originalError: error
+      originalError: error,
     };
   }
 
@@ -94,7 +101,7 @@ export class ErrorHandlerService {
     if (error instanceof Error) {
       return {
         message: error.message || 'An error occurred',
-        stack: error.stack
+        stack: error.stack,
       };
     }
 
@@ -106,7 +113,7 @@ export class ErrorHandlerService {
       const obj = error as any;
       return {
         message: obj.message || obj.error || obj.statusText || 'Unknown error',
-        code: obj.status || obj.code
+        code: obj.status || obj.code,
       };
     }
 
@@ -124,7 +131,7 @@ export class ErrorHandlerService {
       if (err.result?.error) {
         return {
           code: err.result.error.code || err.status || 500,
-          message: err.result.error.message || 'Unknown API error'
+          message: err.result.error.message || 'Unknown API error',
         };
       }
 
@@ -132,7 +139,7 @@ export class ErrorHandlerService {
       if (err.status && typeof err.status === 'number') {
         return {
           code: err.status,
-          message: err.statusText || `HTTP Error ${err.status}`
+          message: err.statusText || `HTTP Error ${err.status}`,
         };
       }
 
