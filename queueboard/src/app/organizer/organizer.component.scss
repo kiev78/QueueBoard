@@ -214,7 +214,7 @@
   background: var(--color-surface, #222);
   color: var(--color-text, #fff);
   border: 1px solid var(--color-border);
-  border-left: 4px solid #dc3545; /* error accent */
+  border-left: 4px solid #dc3545; /* default error accent */
   padding: 0.6rem 0.75rem 0.6rem 0.75rem;
   border-radius: var(--border-radius-md);
   box-shadow: var(--shadow-md);
@@ -227,6 +227,11 @@
   pointer-events: auto; /* enable interaction */
   animation: toast-in 180ms ease-out;
 }
+
+.toast-item.toast-info { border-left-color: #0d6efd; }
+.toast-item.toast-warning { border-left-color: #fd7e14; }
+.toast-item.toast-error { border-left-color: #dc3545; }
+.toast-item.toast-critical { border-left-color: #842029; }
 
 .toast-message { flex: 1; line-height: 1.3; }
 

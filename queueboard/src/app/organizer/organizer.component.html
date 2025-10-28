@@ -2,24 +2,18 @@
   <div class="container-fluid">
     <span class="navbar-brand">Queue Board — Organizer</span>
     <div class="ms-auto d-flex gap-2 align-items-center">
-      <!-- Dark mode toggle -->
-      @if (themeInitialized()) {
+      <!-- Dark mode toggle always visible -->
       <button
         class="btn btn-outline-light"
         (click)="toggleDarkMode()"
         [title]="isDarkMode() ? 'Switch to light mode' : 'Switch to dark mode'"
       >
-        @if (isDarkMode()) {
-        <span>🌞</span>
-        } @else {
-        <span>🌙</span>
-        }
+        @if (isDarkMode()) { <span>🌞</span> } @else { <span>🌙</span> }
       </button>
-
+      @if (!authenticated()) {
       <button class="btn btn-outline-light" (click)="connectYouTube()" [disabled]="connecting()">
-        @if (!connecting()) {
-        <span class="me-1">☁️</span> } @if (connecting()) { <span class="me-1">⏳</span> } Connect
-        YouTube
+        @if (!connecting()) { <span class="me-1">☁️</span> } @if (connecting()) {
+        <span class="me-1">⏳</span> } Connect YouTube
       </button>
       } @else {
       <button
@@ -29,12 +23,7 @@
       >
         Refresh
       </button>
-
-      <button
-        class="btn btn-light text-danger"
-        (click)="youtube.signOut(); playlists.set([])"
-        [disabled]="connecting()"
-      >
+      <button class="btn btn-light text-danger" (click)="signOut()" [disabled]="connecting()">
         Sign Out
       </button>
       }
@@ -289,7 +278,14 @@
 <!-- Toast notifications -->
 <div class="toast-container" aria-live="polite" aria-atomic="true">
   @for (t of toastMessages(); track t.id) {
-  <div class="toast-item" role="alert">
+  <div
+    class="toast-item"
+    [class.toast-info]="t.severity === 'info'"
+    [class.toast-warning]="t.severity === 'warning'"
+    [class.toast-error]="t.severity === 'error'"
+    [class.toast-critical]="t.severity === 'critical'"
+    role="alert"
+  >
     <div class="toast-message">{{ t.message }}</div>
     <button class="toast-close" (click)="dismissToast(t.id)" aria-label="Dismiss">×</button>
   </div>

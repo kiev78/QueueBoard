@@ -31,7 +31,7 @@ import {
 } from '../services/youtube-api.types';
 import { PollingService } from '../services/PollingService';
 import { StorageKey, StorageService } from '../services/StorageService';
-import { ErrorHandlerService } from '../services/ErrorHandlerService';
+import { ErrorHandlerService, AppError, ErrorSeverity } from '../services/ErrorHandlerService';
 import { PlayerManagerService } from '../services/PlayerManagerService';
 import { InputSanitizerService } from '../services/InputSanitizerService';
 import { PlaylistColumn, PlaylistService, VideoCard } from '../services/playlist.service';
@@ -134,8 +134,9 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   connecting = signal(false);
   error = signal<string | null>(null);
   loadingMore = signal(false);
-  // Toast notifications (simple ephemeral messages)
-  toastMessages = signal<{ id: string; message: string }[]>([]);
+  authenticated = signal(false);
+  // Toast notifications (simple ephemeral messages with severity)
+  toastMessages = signal<{ id: string; message: string; severity: ErrorSeverity }[]>([]);
 
   // Sort-related properties
   currentSortOrder = signal<PlaylistSortOrder>(PLAYLIST_SORT_ORDER.CUSTOM);
@@ -261,30 +262,40 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       ]);
     }
 
-    //get api token and checked if logged in
-    this.youtube.isAuthenticated();
+    // Attempt silent auth restoration (loads gapi/gis and restores token if present)
+    this.attemptSilentAuth();
   }
 
   async connectYouTube() {
+    // If already authenticated, just ensure playlists are loaded and bail.
+    if (this.authenticated()) {
+      if (!this.hasPlaylists()) {
+        this.refresh();
+      } else {
+        this.showToast('Already connected', ErrorSeverity.INFO, 2000);
+      }
+      return;
+    }
     this.error.set(null);
     this.connecting.set(true);
     try {
       await this.youtube.load();
       const token = await this.youtube.requestAccessToken();
       if (!token) {
-        this.error.set('User did not grant access');
+        const appErr = this.errorHandler.handleError('User did not grant access', 'auth');
+        this.showToast(appErr.message, appErr.severity);
         return;
       }
-
       await this._fetchAndProcessPlaylists();
-
+      this.authenticated.set(true);
       if (this.pollingInterval) clearInterval(this.pollingInterval);
       this.pollingInterval = setInterval(
         () => this.refresh(),
         environment.pollingIntervalMinutes * 60 * 1000
       );
-    } catch (err: any) {
-      this.error.set(err?.message || String(err));
+    } catch (err) {
+      const appErr = this.errorHandler.handleYouTubeError(err, 'connectYouTube');
+      this.showToast(appErr.message, appErr.severity);
     } finally {
       this.connecting.set(false);
     }
@@ -295,8 +306,9 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     this.connecting.set(true);
     try {
       await this._fetchAndProcessPlaylists();
-    } catch (err: any) {
-      this.error.set(err?.message || String(err));
+    } catch (err) {
+      const appErr = this.errorHandler.handleYouTubeError(err, 'refreshPlaylists');
+      this.showToast(appErr.message, appErr.severity);
     } finally {
       this.connecting.set(false);
     }
@@ -500,8 +512,9 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
       this.syncMove(videoToMove, sourcePlaylistId, destPlaylistId).catch((err) => {
         console.error('Failed to sync video move with YouTube:', err);
-        const msg = `Failed to sync video with YouTube: ${err?.message || String(err)}`;
-        this.showToast(msg);
+        const appErr = this.errorHandler.handleError(err, 'moveVideo');
+        const msg = `Failed to move video: ${err?.message || String(err)}`;
+        this.showToast(msg, appErr.severity);
       });
     }
     this.storage.savePlaylists(this.playlists());
@@ -592,9 +605,10 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       this.newPlaylistName.set('');
       this.showAddPlaylist.set(false);
       this.storage.savePlaylists(this.playlists());
-    } catch (e: any) {
+    } catch (e) {
       console.error('Failed to create playlist', e);
-      this.error.set(e?.message || String(e));
+      const appErr = this.errorHandler.handleYouTubeError(e, 'createPlaylist');
+      this.showToast(appErr.message, appErr.severity);
     } finally {
       this.connecting.set(false);
     }
@@ -631,7 +645,11 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     if (!urlOrId) return;
     const videoId = this.extractVideoId(urlOrId) || urlOrId.trim();
     if (!videoId) {
-      this.error.set('Could not parse a YouTube video id from the provided value.');
+      const appErr = this.errorHandler.handleError(
+        'Could not parse a YouTube video id from the provided value.',
+        'addVideo'
+      );
+      this.showToast(appErr.message, appErr.severity);
       return;
     }
 
@@ -699,9 +717,10 @@ export class OrganizerComponent implements OnInit, OnDestroy {
           this.storage.savePlaylists(this.playlists());
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to add video to playlist', err);
-      this.error.set(err?.message || String(err));
+      const appErr = this.errorHandler.handleYouTubeError(err, 'addVideoToPlaylist');
+      this.showToast(appErr.message, appErr.severity);
     } finally {
       // clear loading for this playlist
       this.addVideoLoading.update((m) => ({ ...(m || {}), [playlistId]: false }));
@@ -721,16 +740,59 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     return this.theme.darkMode();
   }
 
+  signOut(): void {
+    this.youtube.signOut();
+    this.authenticated.set(false);
+    this.playlists.set([]);
+    try {
+      this.storage.clear();
+    } catch {}
+    this.showToast('Signed out', ErrorSeverity.INFO, 2500);
+  }
+
+  private attemptSilentAuth() {
+    if (!isPlatformBrowser(this.platformId)) return;
+    // Load scripts + restore token (load is idempotent)
+    this.youtube
+      .load()
+      .then(() => {
+        if (this.youtube.isAuthenticated()) {
+          this.authenticated.set(true);
+          const playlistsLoaded =
+            this.playlists().length > 0 && this.playlists()[0]?.id !== 'loading';
+          // If no playlists loaded yet, fetch them silently
+          if (!playlistsLoaded) {
+            this.connecting.set(true);
+            this._fetchAndProcessPlaylists()
+              .catch((err) => {
+                const appErr = this.errorHandler.handleYouTubeError(err, 'silentAuthLoad');
+                this.showToast(appErr.message, appErr.severity);
+              })
+              .finally(() => this.connecting.set(false));
+          }
+          this.showToast('Session restored', ErrorSeverity.INFO, 2500);
+        }
+      })
+      .catch(() => {
+        // Ignore silent auth failures; user can still click Connect
+      });
+  }
+
   // Toast API
-  showToast(message: string, durationMs: number = 4000) {
+  showToast(
+    message: string,
+    severity: ErrorSeverity = ErrorSeverity.ERROR,
+    durationMs: number = 4000
+  ) {
     if (!message) return;
     const id = 't-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-    const entry = { id, message };
+    const entry = { id, message, severity };
     this.toastMessages.update((curr) => [...curr, entry]);
-    // Auto-remove after duration
+    // Critical errors persist longer
+    const timeout = severity === ErrorSeverity.CRITICAL ? durationMs * 2 : durationMs;
     setTimeout(() => {
       this.toastMessages.update((curr) => curr.filter((t) => t.id !== id));
-    }, durationMs);
+    }, timeout);
   }
 
   dismissToast(id: string) {

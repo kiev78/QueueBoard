@@ -140,7 +140,12 @@ export class YoutubeApiService {
     return this.tokenClient;
   }
 
-  requestAccessToken(): Promise<string | null> {
+  /**
+   * Requests an OAuth access token via Google Identity Services.
+   * Resolves with the token, null if user closes/cancels the auth dialog, or throws on credential misconfiguration.
+   * Adds a timeout-based cancellation heuristic: if no response within timeout, resolve null.
+   */
+  requestAccessToken(timeoutMs: number = 15000): Promise<string | null> {
     // if we already have a valid token in memory/session, return it
     const stored = this.getStoredToken();
     if (stored) {
@@ -150,13 +155,30 @@ export class YoutubeApiService {
       } catch (e) {}
       return Promise.resolve(this.accessToken);
     }
-
     return new Promise((resolve) => {
-      const client = this.createTokenClient((token) => {
+      let settled = false;
+      const done = (token: string | null) => {
+        if (settled) return;
+        settled = true;
         resolve(token);
+      };
+
+      // Set up timeout heuristic: if GIS dialog is closed without callback firing we resolve null.
+      const timer = setTimeout(() => {
+        done(null);
+      }, timeoutMs);
+
+      const client = this.createTokenClient((token) => {
+        clearTimeout(timer);
+        done(token);
       });
 
-      client.requestAccessToken();
+      try {
+        client.requestAccessToken();
+      } catch (e) {
+        clearTimeout(timer);
+        done(null);
+      }
     });
   }
 
