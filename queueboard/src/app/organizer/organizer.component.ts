@@ -134,6 +134,8 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   connecting = signal(false);
   error = signal<string | null>(null);
   loadingMore = signal(false);
+  // Toast notifications (simple ephemeral messages)
+  toastMessages = signal<{ id: string; message: string }[]>([]);
 
   // Sort-related properties
   currentSortOrder = signal<PlaylistSortOrder>(PLAYLIST_SORT_ORDER.CUSTOM);
@@ -498,7 +500,8 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
       this.syncMove(videoToMove, sourcePlaylistId, destPlaylistId).catch((err) => {
         console.error('Failed to sync video move with YouTube:', err);
-        // this.error.set(`Failed to move video: ${err.message || String(err)}`);
+        const msg = `Failed to sync video with YouTube: ${err?.message || String(err)}`;
+        this.showToast(msg);
       });
     }
     this.storage.savePlaylists(this.playlists());
@@ -716,5 +719,21 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   }
   isDarkMode(): boolean {
     return this.theme.darkMode();
+  }
+
+  // Toast API
+  showToast(message: string, durationMs: number = 4000) {
+    if (!message) return;
+    const id = 't-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const entry = { id, message };
+    this.toastMessages.update((curr) => [...curr, entry]);
+    // Auto-remove after duration
+    setTimeout(() => {
+      this.toastMessages.update((curr) => curr.filter((t) => t.id !== id));
+    }, durationMs);
+  }
+
+  dismissToast(id: string) {
+    this.toastMessages.update((curr) => curr.filter((t) => t.id !== id));
   }
 }

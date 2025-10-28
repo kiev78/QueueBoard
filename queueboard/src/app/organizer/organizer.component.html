@@ -285,3 +285,13 @@
   </app-minimized-videos>
   }
 </div>
+
+<!-- Toast notifications -->
+<div class="toast-container" aria-live="polite" aria-atomic="true">
+  @for (t of toastMessages(); track t.id) {
+  <div class="toast-item" role="alert">
+    <div class="toast-message">{{ t.message }}</div>
+    <button class="toast-close" (click)="dismissToast(t.id)" aria-label="Dismiss">×</button>
+  </div>
+  }
+</div>
