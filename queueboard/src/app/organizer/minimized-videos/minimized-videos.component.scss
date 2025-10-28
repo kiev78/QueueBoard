@@ -12,8 +12,8 @@
 
 .minimized-video-card {
   position: relative;
-  width: 120px;
-  height: 67px;
+  width: 150px;
+  height: 75px;
   border-radius: var(--border-radius-sm);
   overflow: hidden;
   box-shadow: 0 4px 12px var(--color-shadow-dark);
@@ -51,8 +51,8 @@
     right: 2px;
     background-color: var(--color-overlay-dark);
     border-radius: 50%;
-    width: 20px;
-    height: 20px;
+    width: 30px;
+    height: 30px;
     font-size: 1rem; // Adjust size for the small button
   }
 }

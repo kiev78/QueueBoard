@@ -119,3 +119,12 @@ body:not(.dark-mode) {
 /* Previously used MDC (Material Components Web); removed in favor of Bootstrap. */
 
 /* Legacy Angular Material rules removed after migrating to Bootstrap. */
+
+/* Placeholder styling */
+body.dark-mode ::placeholder {
+  color: var(--color-text-muted, #b0b0b0);
+  opacity: 1;
+}
+body:not(.dark-mode) ::placeholder {
+  color: #888;
+}

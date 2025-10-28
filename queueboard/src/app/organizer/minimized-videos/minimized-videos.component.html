@@ -1,19 +1,36 @@
 <div class="minimized-videos-stack">
-  <div *ngFor="let v of videos" class="minimized-video-card" (click)="restore.emit(v)" role="button" [title]="'Restore ' + v.title">
+  <div
+    *ngFor="let v of videos"
+    class="minimized-video-card"
+    (click)="restore.emit(v)"
+    role="button"
+    [title]="'Restore ' + v.title"
+  >
     <youtube-player
-      [videoId]="v.id" [id]="'player-' + v.id"
-      [width]="120" [height]="67"
-      [playerVars]="{autoplay: 1, rel: 0, controls: 0, showinfo: 0, modestbranding: 1}"
+      [videoId]="v.id"
+      [id]="'player-' + v.id"
+      [width]="150"
+      [height]="75"
+      [playerVars]="{ autoplay: 1, rel: 0, controls: 0, showinfo: 0, modestbranding: 1 }"
       (ready)="playerReady.emit($event)"
-      (stateChange)="stateChange.emit($event)">
+      (stateChange)="stateChange.emit($event)"
+    >
     </youtube-player>
 
     <div class="minimized-video-overlay">
-      <button class="btn btn-sm btn-icon" (click)="togglePlayPause.emit(v); $event.stopPropagation();" [title]="playerState === 1 ? 'Pause' : 'Play'">
+      <button
+        class="btn btn-sm btn-icon"
+        (click)="togglePlayPause.emit(v); $event.stopPropagation()"
+        [title]="playerState === 1 ? 'Pause' : 'Play'"
+      >
         <span *ngIf="playerState === 1">❚❚</span>
         <span *ngIf="playerState !== 1">▶</span>
       </button>
-      <button class="btn btn-sm btn-icon close-minimized" (click)="close.emit(v); $event.stopPropagation();" title="Close">
+      <button
+        class="btn btn-sm btn-icon close-minimized"
+        (click)="close.emit(v); $event.stopPropagation()"
+        title="Close"
+      >
         ✕
       </button>
     </div>

@@ -37,6 +37,7 @@ import { InputSanitizerService } from '../services/InputSanitizerService';
 import { PlaylistColumn, PlaylistService, VideoCard } from '../services/playlist.service';
 import { SortService } from '../services/sort.service';
 import { PlaylistSortOrder, PLAYLIST_SORT_ORDER } from '../types/sort.types';
+import { ThemeService } from '../services/theme.service';
 import { WelcomeScreenComponent } from './welcome-screen/welcome-screen.component';
 @Component({
   selector: 'app-organizer',
@@ -149,8 +150,8 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   // per-playlist adding indicator
   addVideoLoading = signal<Record<string, boolean>>({});
 
-  // Dark mode toggle state
-  isDarkMode = signal(true);
+  // Theme (dark mode) handled by ThemeService
+  private theme = inject(ThemeService);
   themeInitialized = signal(false);
 
   selectedVideo = signal<VideoCard | null>(null);
@@ -221,8 +222,8 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       document.body.appendChild(tag);
     }
 
-    // Initialize dark mode from localStorage or system preference
-    this.initializeDarkMode();
+    // Initialize theme service
+    this.theme.init();
     this.themeInitialized.set(true);
 
     // Load saved sort order using SortService (which uses StorageService)
@@ -497,7 +498,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
 
       this.syncMove(videoToMove, sourcePlaylistId, destPlaylistId).catch((err) => {
         console.error('Failed to sync video move with YouTube:', err);
-        this.error.set(`Failed to move video: ${err.message || String(err)}`);
+        // this.error.set(`Failed to move video: ${err.message || String(err)}`);
       });
     }
     this.storage.savePlaylists(this.playlists());
@@ -709,58 +710,11 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   // Removed private loadState() and saveState() methods.
   // Playlist state is now managed by calling this.storage.getPlaylists() and this.storage.savePlaylists().
 
-  // Dark mode functionality
-  private initializeDarkMode(): void {
-    // This entire logic is browser-specific. Do nothing on the server.
-    if (!isPlatformBrowser(this.platformId)) {
-      this.isDarkMode.set(false); // Default to light mode on server
-      return;
-    }
-
-    // Check for saved preference
-    const savedDarkMode = this.storage.getItem(StorageKey.DARK_MODE);
-
-    if (savedDarkMode !== null) {
-      // Use saved preference
-      this.isDarkMode.set(savedDarkMode === 'true');
-    } else {
-      // Fall back to system preference
-      const prefersDark =
-        window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      this.isDarkMode.set(prefersDark);
-    }
-
-    // Apply the dark mode class
-    this.applyDarkMode();
-    this.themeInitialized.set(true);
-  }
-
+  // Dark mode delegated to ThemeService
   toggleDarkMode(): void {
-    const newDarkMode = !this.isDarkMode();
-    console.log('Toggle dark mode:', { from: this.isDarkMode(), to: newDarkMode });
-    this.isDarkMode.set(newDarkMode);
-    // Save preference
-    // StorageService handles platform checks internally
-    this.storage.setItem(StorageKey.DARK_MODE, String(newDarkMode));
-    console.log('Saved to storage:', this.storage.getItem(StorageKey.DARK_MODE));
-
-    // Apply the change
-    this.applyDarkMode();
+    this.theme.toggle();
   }
-
-  private applyDarkMode(): void {
-    if (!isPlatformBrowser(this.platformId)) return;
-
-    const body = document.body;
-    const isDark = this.isDarkMode();
-    console.log('Apply dark mode:', { isDark, bodyClasses: body.classList.toString() });
-
-    if (isDark) {
-      body.classList.add('dark-mode');
-    } else {
-      body.classList.remove('dark-mode');
-    }
-
-    console.log('After applying:', { bodyClasses: body.classList.toString() });
+  isDarkMode(): boolean {
+    return this.theme.darkMode();
   }
 }
