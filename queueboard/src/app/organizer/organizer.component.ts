@@ -194,6 +194,11 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     clearInterval(this.pollingInterval);
   }
 
+  /**
+   * Ensures all video data for all playlists is loaded when the search input is focused.
+   * This is a proactive measure to guarantee comprehensive search results, but it only
+   * fetches videos if they haven't been preloaded already, making it efficient.
+   */
   onSearchFocus() {
     if (this.preloadedAllVideos || this.preloading()) return;
     this.preloading.set(true);
@@ -229,7 +234,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     }
   }
 
-  ngOnInit(): void {
+  async ngOnInit(): Promise<void> {
     // Load YouTube IFrame API
     if (isPlatformBrowser(this.platformId)) {
       const tag = document.createElement('script');
@@ -245,11 +250,9 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     const savedSortOrder = this.sortService.loadSortOrder();
     this.currentSortOrder.set(savedSortOrder);
 
-    const saved = this.storage.getPlaylists();
+    const saved = await this.storage.getPlaylists();
 
     if (saved) {
-      // Apply custom sort if available, otherwise use the saved playlists as-is
-      // The filteredPlaylists computed signal will handle sorting.
       this.playlists.set(saved);
     } else {
       // No saved state - show loading
@@ -260,6 +263,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
           description: '',
           color: '#fff',
           publishedAt: 0,
+          lastUpdated: 0,
           videos: [
             {
               id: 'spinner',
@@ -326,14 +330,10 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     }
   }
 
-  /**
-   * Shared logic to fetch playlists and their items, then update the state.
-   * This reduces duplication between connectYouTube() and refresh().
-   */
   private async _fetchAndProcessPlaylists(): Promise<void> {
-    // Fetch all playlists at once - pagination disabled
-    // TODO: Re-enable pagination by passing pageToken and reducing maxResults
-    const { playlists } = await this.playlistService.fetchAndMergePlaylists(undefined, 50);
+    // Fetch all playlists at once
+    // TODO: Re-enable pagination by passing pageToken
+    const { playlists } = await this.playlistService.fetchAndMergePlaylists(250);
     // Sorting handled exclusively by SortService; legacy manual sort initialization removed.
 
     // nextPageToken tracking disabled for now
@@ -348,7 +348,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         }
         try {
           // Fetch all videos at once - pagination disabled
-          const { items } = await this.youtube.fetchPlaylistItems(pl.id, 50);
+          const { items } = await this.youtube.fetchPlaylistItems(pl.id, 250);
           const mappedVideos: VideoCard[] = (items as YouTubePlaylistItem[]).map(
             (v: YouTubePlaylistItem) => ({
               id: v.contentDetails?.videoId!,
@@ -365,6 +365,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
                 : '',
             })
           );
+          
           return { ...pl, videos: mappedVideos };
         } catch (e) {
           console.error('Failed to load playlist items for', pl.id, e);
@@ -752,12 +753,12 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     return this.theme.darkMode();
   }
 
-  signOut(): void {
+  async signOut(): Promise<void> {
     this.youtube.signOut();
     this.authenticated.set(false);
     this.playlists.set([]);
     try {
-      this.storage.clear();
+      await this.storage.clear();
     } catch {}
     this.toast.show('Signed out', ErrorSeverity.INFO, 2500);
   }
