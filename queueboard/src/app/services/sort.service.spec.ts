@@ -1,5 +1,5 @@
 import { SortService } from './sort.service';
-import { StorageKey } from './StorageService';
+import { LOCAL_STORAGE_KEYS as StorageKey, LocalStorageKey } from './local-storage-keys';
 import { PlaylistColumn } from './playlist.service';
 import { PLAYLIST_SORT_ORDER } from '../types/sort.types';
 
@@ -21,6 +21,7 @@ describe('SortService', () => {
       color: '#ccc',
       videos: [],
       publishedAt: Date.now() - i * 1000,
+      lastUpdated: Date.now() - i * 1000,
     }));
   }
 

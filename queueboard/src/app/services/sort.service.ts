@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { PlaylistColumn, VideoCard } from './playlist.service';
 import { PlaylistSortOrder, PLAYLIST_SORT_ORDER } from '../types/sort.types';
-import { StorageKey } from './StorageService';
+import { LOCAL_STORAGE_KEYS as StorageKey, LocalStorageKey } from './local-storage-keys';
 import { moveItemInArray } from '@angular/cdk/drag-drop';
 
 @Injectable({
@@ -152,7 +152,7 @@ export class SortService {
     playlists: PlaylistColumn[],
     previousIndex: number,
     currentIndex: number,
-    currentSortOrder: PlaylistSortOrder
+    currentSortOrder: PlaylistSortOrder,
   ): { playlists: PlaylistColumn[]; newSortOrder: PlaylistSortOrder } {
     const arr = [...playlists];
     moveItemInArray(arr, previousIndex, currentIndex);

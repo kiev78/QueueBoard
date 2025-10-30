@@ -3,61 +3,79 @@ import { YoutubeApiService } from '../shared/services/youtube-api.service';
 import { YouTubePlaylist, YouTubePlaylistItem } from '../shared/services/youtube-api.types';
 import { StorageService } from './StorageService';
 
-export interface VideoCard {
+export interface VideoCardDB {
   id: string;
   playlistItemId?: string;
   title: string;
   description: string;
   duration?: string;
   thumbnail?: string;
+  thumbnailBlob?: Blob;
   tags?: string[];
   channelTitle?: string;
   publishedAt?: string;
   youtubeUrl: string;
+}
+
+export interface VideoCard extends VideoCardDB {
   detailsVisible?: boolean;
   isMinimized?: boolean;
   resumeTime?: number;
+  isTemp?: boolean;
 }
 
-export interface PlaylistColumn {
+export interface PlaylistColumnDB {
   publishedAt: number;
   id: string;
   title: string;
   description?: string;
   color?: string;
-  videos: VideoCard[];
+  videos: VideoCardDB[];
   nextPageToken?: string;
-  sortId?: number; // This will be set from PlaylistSort during sorting
+  sortId?: number;
+  lastUpdated: number;
+}
+
+export interface PlaylistColumn extends PlaylistColumnDB {
+  videos: VideoCard[];
 }
 
 @Injectable({
   providedIn: 'root',
 })
+
 /**
- * Handles Fetching, merging, and persisting playlist + sort metadata
+ * Handles Creating, fetching, merging, and persisting playlist + sort metadata
  * Updating modification timestamps
- * Creating playlists
  * Applying sort orders
  */
 export class PlaylistService {
   private youtube = inject(YoutubeApiService);
   private storage = inject(StorageService);
   public nextPageToken: string | null | undefined = undefined;
-  // Legacy sort state removed (handled by SortService).
 
+  /**
+   * Fetch all playlists and their items from YouTube
+   * @param playlists 
+   * @param limit 
+   * @returns 
+   */
   async fetchAllPlaylistItems(playlists: PlaylistColumn[], limit = 50): Promise<PlaylistColumn[]> {
     const updatedPlaylists: PlaylistColumn[] = [];
+  // Iterate through each playlist and fetch its items
     for (const pl of playlists) {
       try {
+        // Skip if videos are already loaded
         if (pl.videos && pl.videos.length > 0) {
           updatedPlaylists.push(pl);
           continue;
         }
 
-        // Fetch all videos at once by setting high limit
+        // If no videos loaded, fetch them from YouTube 
         // TODO: Re-enable pagination by reducing limit and using nextPageToken
         const { items } = await this.youtube.fetchPlaylistItems(pl.id, limit);
 
+        // Map YouTube API response to VideoCard format
         const mapped: VideoCard[] = (items as YouTubePlaylistItem[]).map(
           (v: YouTubePlaylistItem) => ({
             id: v.contentDetails?.videoId!,
@@ -75,6 +93,7 @@ export class PlaylistService {
           })
         );
 
+        // Update playlist with fetched videos
         // Note: nextPageToken scaffolding kept for future pagination
         updatedPlaylists.push({ ...pl, videos: mapped }); // , nextPageToken (disabled)
       } catch (e) {
@@ -82,17 +101,24 @@ export class PlaylistService {
         updatedPlaylists.push(pl);
       }
     }
+    // Return playlists with their videos loaded
     return updatedPlaylists;
   }
 
+  /**
+   * Fetch and merge playlists from YouTube
+   * @param maxResults Maximum number of results to fetch
+   * @returns Merged playlists and next page token
+   */
   public async fetchAndMergePlaylists(
-    pageToken?: string,
     maxResults: number = 50
   ): Promise<{ playlists: PlaylistColumn[]; nextPageToken?: string }> {
+
     // Fetch all playlists at once - pageToken and pagination disabled for now
     // TODO: Re-enable pagination by using pageToken parameter and reducing maxResults
     const res = await this.youtube.fetchPlaylists(maxResults); // pageToken disabled
     const currentTime = new Date().toISOString();
+    // Todo: what else is returned that's useful for us.
     const fetched: PlaylistColumn[] = (res?.items || []).map((p: YouTubePlaylist) => ({
       id: p.id,
       title: p.snippet?.title || '',
@@ -100,11 +126,13 @@ export class PlaylistService {
       color: '#e0e0e0',
       videos: [] as VideoCard[],
       publishedAt: p.snippet?.publishedAt ? new Date(p.snippet.publishedAt).getTime() : 0,
+      lastUpdated: new Date().getTime(),
     }));
+
     // nextPageToken scaffolding kept for future use
     const nextPageToken = undefined; // res?.nextPageToken (disabled)
 
-    const stored = this.loadState();
+    const stored = await this.loadState();
     let merged: PlaylistColumn[] = [];
     const fetchedMap = new Map(fetched.map((f: PlaylistColumn) => [f.id, f]));
 
@@ -119,7 +147,8 @@ export class PlaylistService {
             description: f.description || s.description,
             color: s.color || f.color, // Prefer stored color
             publishedAt: f.publishedAt, // Always use the fresh timestamp from YouTube
-          } as PlaylistColumn;
+            lastUpdated: new Date().getTime(),
+          };
         }
         return s;
       });
@@ -138,12 +167,8 @@ export class PlaylistService {
     return { playlists: merged, nextPageToken };
   }
 
-  // Legacy updateSortDataWithYouTubeInfo removed.
-
-  public loadState(): PlaylistColumn[] | null {
-    const playlists = this.storage.getPlaylists();
-
-    // Legacy migration removed; return stored playlists as-is.
+  public async loadState(): Promise<PlaylistColumn[] | null> {
+    const playlists = await this.storage.getPlaylists();
 
     return playlists;
   }
@@ -152,8 +177,6 @@ export class PlaylistService {
    * Initialize manual sort order from current playlist order
    * This should be called after applying a sort method to sync the manual sort with the result
    */
-  // Removed legacy sort-related methods (initializeManualSortFromPlaylists, applySort,
-  // updateSortIdsAfterSorting, updatePlaylistModified, updateMultiplePlaylistsModified).
 
   /**
    * Create a new playlist both locally and on YouTube (if authenticated).
@@ -168,10 +191,11 @@ export class PlaylistService {
       color: '#e0e0e0',
       videos: [],
       publishedAt: Date.now(),
+      lastUpdated: Date.now(),
     };
 
     // Persist locally first
-    const current = this.loadState() || [];
+    const current = await this.loadState() || [];
     const merged = [newPl, ...current];
     this.storage.savePlaylists(merged);
 

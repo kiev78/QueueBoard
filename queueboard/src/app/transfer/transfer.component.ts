@@ -3,7 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { YoutubeApiService } from '../shared/services/youtube-api.service';
 import { YouTubePlaylist, YouTubeSearchResult } from '../shared/services/youtube-api.types';
-import { StorageService, StorageKey } from '../services/StorageService';
+import { StorageService } from '../services/StorageService';
+import { LOCAL_STORAGE_KEYS as StorageKey } from '../services/local-storage-keys';
 
 @Component({
   selector: 'app-transfer',
