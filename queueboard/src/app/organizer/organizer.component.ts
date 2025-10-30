@@ -752,12 +752,12 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     return this.theme.darkMode();
   }
 
-  signOut(): void {
+  async signOut(): Promise<void> {
     this.youtube.signOut();
     this.authenticated.set(false);
     this.playlists.set([]);
     try {
-      this.storage.clear();
+      await this.storage.clear();
     } catch {}
     this.toast.show('Signed out', ErrorSeverity.INFO, 2500);
   }
