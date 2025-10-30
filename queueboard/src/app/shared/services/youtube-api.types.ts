@@ -253,3 +253,27 @@ export function isApiResponse<T>(response: unknown): response is YouTubeApiRespo
     typeof response === 'object' && response !== null && Array.isArray((response as any).items)
   );
 }
+
+// Search
+export interface YouTubeSearchResultSnippet {
+  publishedAt?: string;
+  channelId?: string;
+  title?: string;
+  description?: string;
+  thumbnails?: YouTubeThumbnails;
+  channelTitle?: string;
+  liveBroadcastContent?: string;
+  publishTime?: string;
+}
+
+export interface YouTubeSearchResult {
+  kind: 'youtube#searchResult';
+  etag: string;
+  id: {
+    kind: string;
+    videoId?: string;
+    channelId?: string;
+    playlistId?: string;
+  };
+  snippet: YouTubeSearchResultSnippet;
+}

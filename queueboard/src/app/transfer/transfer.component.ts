@@ -1,13 +1,14 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, inject, signal, OnInit, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { YoutubeApiService } from '../shared/services/youtube-api.service';
-import { YouTubePlaylist } from '../shared/services/youtube-api.types';
+import { YouTubePlaylist, YouTubeSearchResult } from '../shared/services/youtube-api.types';
 import { StorageService, StorageKey } from '../services/StorageService';
 
 @Component({
   selector: 'app-transfer',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './transfer.component.html',
   styleUrls: ['./transfer.component.scss']
 })
@@ -20,9 +21,20 @@ export class TransferComponent implements OnInit {
   trans_spotify = signal(false); // Added for future use
 
   googlePlaylists = signal<YouTubePlaylist[]>([]);
+  searchQuery = signal('');
+  searchResults = signal<YouTubeSearchResult[]>([]);
+  playlistSearchQuery = signal('');
+
+  filteredGooglePlaylists = computed(() => {
+    const query = this.playlistSearchQuery().toLowerCase();
+    if (!query) {
+      return this.googlePlaylists();
+    }
+    return this.googlePlaylists().filter(p => p.snippet?.title?.toLowerCase().includes(query));
+  });
 
   ngOnInit(): void {
-    const storedPlaylists = this.storage.getItem<YouTubePlaylist[]>(StorageKey.STATE);
+    const storedPlaylists = this.storage.getItem<YouTubePlaylist[]>(StorageKey.TRANSFER_GOOGLE);
     if (storedPlaylists) {
       this.googlePlaylists.set(storedPlaylists);
       this.trans_google.set(true);
@@ -37,7 +49,8 @@ export class TransferComponent implements OnInit {
       if (token) {
         const playlists = await this.youtube.fetchPlaylists();
         this.googlePlaylists.set(playlists.items);
-        this.storage.setItem(StorageKey.TRANSFER_GOOGLE, playlists.items);
+        if(playlists.items.length > 0)
+          this.storage.setItem(StorageKey.TRANSFER_GOOGLE, playlists.items);
         this.trans_google.set(true);
       }
     } catch (error) {
@@ -45,5 +58,13 @@ export class TransferComponent implements OnInit {
     } finally {
       this.connecting.set(false);
     }
+  }
+
+  async search() {
+    if (!this.searchQuery()) {
+      return;
+    }
+    const results = await this.youtube.searchMusicVideos(this.searchQuery());
+    this.searchResults.set(results.items);
   }
 }

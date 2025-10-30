@@ -91,7 +91,7 @@ export class PlaylistService {
   ): Promise<{ playlists: PlaylistColumn[]; nextPageToken?: string }> {
     // Fetch all playlists at once - pageToken and pagination disabled for now
     // TODO: Re-enable pagination by using pageToken parameter and reducing maxResults
-    const res = await this.youtube.fetchPlaylists(undefined, maxResults); // pageToken disabled
+    const res = await this.youtube.fetchPlaylists(maxResults); // pageToken disabled
     const currentTime = new Date().toISOString();
     const fetched: PlaylistColumn[] = (res?.items || []).map((p: YouTubePlaylist) => ({
       id: p.id,

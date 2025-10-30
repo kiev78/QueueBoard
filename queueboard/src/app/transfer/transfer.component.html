@@ -18,6 +18,39 @@
     <div class="playlist-info">
       <p>{{ googlePlaylists().length }} playlists loaded from Google.</p>
     </div>
+
+    <div class="search-container">
+      <h3>Filter Playlists</h3>
+      <div class="input-group mb-3">
+        <input type="text" class="form-control" placeholder="Filter playlists" [(ngModel)]="playlistSearchQuery">
+      </div>
+
+      <ul class="list-group">
+        @for (playlist of filteredGooglePlaylists(); track playlist.id) {
+          <li class="list-group-item">
+            {{ playlist.snippet?.title }}
+          </li>
+        }
+      </ul>
+    </div>
+
+    <div class="search-container">
+      <h3>Search for Music Videos</h3>
+      <div class="input-group mb-3">
+        <input type="text" class="form-control" placeholder="Search for a song" [(ngModel)]="searchQuery">
+        <button class="btn btn-outline-secondary" type="button" (click)="search()">Search</button>
+      </div>
+
+      @if (searchResults().length > 0) {
+        <ul class="list-group">
+          @for (video of searchResults(); track video.id.videoId) {
+            <li class="list-group-item">
+              {{ video.snippet.title }} - {{ video.snippet.description }}
+            </li>
+          }
+        </ul>
+      }
+    </div>
   }
 
   <div class="transfer-button-container">

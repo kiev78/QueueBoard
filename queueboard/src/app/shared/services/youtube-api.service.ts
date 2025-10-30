@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { environment } from '../../../env/environment';
-import { YouTubeApiResponse, YouTubePlaylistItem } from './youtube-api.types';
+import { YouTubeApiResponse, YouTubePlaylist, YouTubePlaylistItem } from './youtube-api.types';
 import { StorageKey } from '../../services/StorageService';
 
 declare global {
@@ -211,19 +211,37 @@ export class YoutubeApiService {
     return !!this.accessToken;
   }
 
-  async fetchPlaylists(pageToken?: string, maxResults = 50) {
+  async fetchPlaylists(maxResults = 200) {
     if (!this.accessToken) throw new Error('Not authenticated');
-    // Fetch all playlists by setting a high maxResults
-    // TODO: Re-enable pagination by uncommenting pageToken usage and reducing maxResults
-    const params: any = { mine: true, maxResults }; // , pageToken (disabled for now)
-    const res = await window.gapi.client.youtube.playlists.list({
-      part: 'id,snippet,contentDetails',
-      ...params,
-    });
 
-    return { ...res.result, items: res.result.items || [] };
+    let playlists: YouTubePlaylist[] = [];
+    let pageToken: string | undefined = undefined;
+    const pageSize = 50; // YouTube API max page size
+
+    do {
+      const remaining = maxResults - playlists.length;
+      const currentPageSize = Math.min(pageSize, remaining);
+
+      // Fetch playlists
+      let res:any = await window.gapi.client.youtube.playlists.list({
+        part: 'id,snippet,contentDetails',
+        mine: true,
+        maxResults: currentPageSize,
+        pageToken: pageToken,
+      });
+
+      const result: YouTubeApiResponse<YouTubePlaylist> = res.result;
+      if (result.items) {
+        playlists = playlists.concat(result.items);
+      }
+
+      pageToken = result.nextPageToken;
+
+    } while (pageToken && playlists.length < maxResults);
+
+    return { items: playlists };
   }
-
+  
   async searchMusicVideos(query: string, maxResults = 50, pageToken?: string) {
     if (!this.accessToken) throw new Error('Not authenticated');
     const res = await window.gapi.client.youtube.search.list({
