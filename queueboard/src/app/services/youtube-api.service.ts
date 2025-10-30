@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { environment } from '../../env/environment';
 import { YouTubeApiResponse, YouTubePlaylistItem } from './youtube-api.types';
-import { StorageKey } from './StorageService';
+import { LOCAL_STORAGE_KEYS as StorageKey, LocalStorageKey } from './local-storage-keys';
 
 declare global {
   interface Window {
@@ -31,12 +31,12 @@ export class YoutubeApiService {
     // Validate developer-supplied credentials to avoid unclear errors from the Google APIs
     if (!this.clientId || this.clientId.includes('YOUR') || this.clientId.includes('<')) {
       throw new Error(
-        'Google OAuth Client ID is not set. Please set environment.googleClientId in src/environments/environment.ts (no angle brackets).'
+        'Google OAuth Client ID is not set. Please set environment.googleClientId in src/environments/environment.ts (no angle brackets).',
       );
     }
     if (!this.apiKey || this.apiKey.includes('YOUR') || this.apiKey.includes('<')) {
       throw new Error(
-        'Google API Key is not set. Please set environment.googleApiKey in src/environments/environment.ts (no angle brackets) and enable the YouTube Data API v3.'
+        'Google API Key is not set. Please set environment.googleApiKey in src/environments/environment.ts (no angle brackets) and enable the YouTube Data API v3.',
       );
     }
 
@@ -119,7 +119,7 @@ export class YoutubeApiService {
             try {
               sessionStorage.setItem(
                 StorageKey.GAPI_TOKEN,
-                JSON.stringify({ accessToken: this.accessToken, expiresAt })
+                JSON.stringify({ accessToken: this.accessToken, expiresAt }),
               );
             } catch (e) {
               console.warn('Failed to persist token to sessionStorage', e);
@@ -220,7 +220,7 @@ export class YoutubeApiService {
 
   async fetchPlaylists(pageToken?: string, maxResults = 50) {
     if (!this.accessToken) throw new Error('Not authenticated');
-   
+
     // TODO: Re-enable pagination by uncommenting pageToken usage and reducing maxResults
     const params: any = { mine: true, maxResults }; // , pageToken (disabled for now)
     const res = await window.gapi.client.youtube.playlists.list({
@@ -237,7 +237,7 @@ export class YoutubeApiService {
   async fetchPlaylistItems(
     playlistId: string,
     maxResults = 50,
-    pageToken?: string
+    pageToken?: string,
   ): Promise<YouTubeApiResponse<YouTubePlaylistItem>> {
     if (!this.accessToken) throw new Error('Not authenticated');
 
@@ -263,7 +263,7 @@ export class YoutubeApiService {
     });
 
     const videoDetailsMap = new Map<string, YouTubeVideoResource>(
-      (vidsRes.result.items || []).map((v: any) => [v.id, v])
+      (vidsRes.result.items || []).map((v: any) => [v.id, v]),
     );
 
     // Merge video details (duration, tags) into the playlist item structure.
@@ -314,7 +314,7 @@ export class YoutubeApiService {
   async fetchVideoMetadata(videoId: string) {
     if (!this.apiKey) throw new Error('Google API key not configured');
     const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${encodeURIComponent(
-      videoId
+      videoId,
     )}&key=${encodeURIComponent(this.apiKey)}`;
     const res = await fetch(url);
     if (!res.ok) {

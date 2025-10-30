@@ -1,5 +1,6 @@
 import { Injectable, computed, signal } from '@angular/core';
-import { StorageService, StorageKey } from './StorageService';
+import { StorageService } from './StorageService';
+import { LOCAL_STORAGE_KEYS as StorageKey, LocalStorageKey } from './local-storage-keys';
 import { isPlatformBrowser } from '@angular/common';
 import { PLATFORM_ID, inject } from '@angular/core';
 

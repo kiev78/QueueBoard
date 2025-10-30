@@ -1,15 +1,8 @@
 import { Injectable, PLATFORM_ID, inject } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { PlaylistColumn } from './playlist.service';
-
-export enum StorageKey {
-  STATE = 'queueboard_state_v1',
-  SORT = 'queueboard_sort_v1',
-  PLAYLIST_SORT_ORDER = 'queueboard_sort_order_v1',
-  GAPI_TOKEN = 'queueboard_gapi_token',
-  NEXT_PAGE_TOKEN = 'queueboard_next_page_token_v1',
-  DARK_MODE = 'queueboard_dark_mode_v1',
-}
+import { LOCAL_STORAGE_KEYS, LocalStorageKey } from './local-storage-keys';
+import { IStorage } from './IStorage';
 
 /**
  * Safe storage service that wraps localStorage with proper error handling and SSR safety.
@@ -29,7 +22,7 @@ export enum StorageKey {
 @Injectable({
   providedIn: 'root',
 })
-export class LocalStorageService {
+export class LocalStorageService implements IStorage {
   private platformId = inject(PLATFORM_ID);
   private readonly MAX_ITEM_SIZE = 1024 * 1024; // 1MB per item
   private readonly MAX_TOTAL_SIZE = 5 * 1024 * 1024; // 5MB total
@@ -38,7 +31,7 @@ export class LocalStorageService {
    * Safely sets an item in localStorage with size checking and error handling.
    * Returns true if successful, false otherwise.
    */
-  setItem<T>(key: StorageKey, value: T): boolean {
+  setItem<T>(key: LocalStorageKey, value: T): boolean {
     if (!isPlatformBrowser(this.platformId)) {
       return false;
     }
@@ -49,7 +42,7 @@ export class LocalStorageService {
       // Validate size before attempting to store
       if (!this.validateSize(serialized)) {
         console.warn(
-          `[StorageService] Item "${key}" exceeds size limit (${serialized.length} bytes)`
+          `[StorageService] Item "${key}" exceeds size limit (${serialized.length} bytes)`,
         );
         // Try to free up space
         this.freeUpSpace(key);
@@ -68,7 +61,7 @@ export class LocalStorageService {
    * Safely retrieves and parses an item from localStorage.
    * Returns the parsed value or defaultValue if not found or error occurs.
    */
-  getItem<T>(key: StorageKey, defaultValue: T | null = null): T | null {
+  getItem<T>(key: LocalStorageKey, defaultValue: T | null = null): T | null {
     if (!isPlatformBrowser(this.platformId)) {
       return defaultValue;
     }
@@ -93,7 +86,7 @@ export class LocalStorageService {
    * Safely removes an item from localStorage.
    * Returns true if successful, false otherwise.
    */
-  removeItem(key: StorageKey): boolean {
+  removeItem(key: LocalStorageKey): boolean {
     if (!isPlatformBrowser(this.platformId)) {
       return false;
     }
@@ -111,14 +104,14 @@ export class LocalStorageService {
    * Clears all application storage keys.
    * Returns true if successful, false otherwise.
    */
-  clear(): boolean {
+  async clear(): Promise<boolean> {
     if (!isPlatformBrowser(this.platformId)) {
       return false;
     }
 
     try {
-      Object.values(StorageKey).forEach((key) => {
-        localStorage.removeItem(key);
+      Object.values(LOCAL_STORAGE_KEYS).forEach((k) => {
+        localStorage.removeItem(k);
       });
       return true;
     } catch (error) {
@@ -137,8 +130,8 @@ export class LocalStorageService {
 
     let total = 0;
     try {
-      Object.values(StorageKey).forEach((key) => {
-        const item = localStorage.getItem(key);
+      Object.values(LOCAL_STORAGE_KEYS).forEach((k) => {
+        const item = localStorage.getItem(k);
         if (item) {
           // UTF-16 encoding uses 2 bytes per character
           total += item.length * 2;
@@ -169,12 +162,18 @@ export class LocalStorageService {
     }
   }
 
-  getPlaylists(): PlaylistColumn[] | null {
-    return this.getItem<PlaylistColumn[]>(StorageKey.STATE);
+  // Async playlist methods to satisfy IStorage (IndexedDB allocator expects async)
+  async getPlaylists(): Promise<PlaylistColumn[] | null> {
+    return this.getItem<PlaylistColumn[]>(LOCAL_STORAGE_KEYS.STATE);
   }
 
-  savePlaylists(playlists: PlaylistColumn[]): void {
-    this.setItem(StorageKey.STATE, playlists);
+  // Keep synchronous helper for callers that expect immediate return
+  savePlaylistsSync(playlists: PlaylistColumn[]): void {
+    this.setItem(LOCAL_STORAGE_KEYS.STATE, playlists);
+  }
+
+  async savePlaylists(playlists: PlaylistColumn[]): Promise<void> {
+    this.savePlaylistsSync(playlists);
   }
 
   /**
@@ -196,23 +195,23 @@ export class LocalStorageService {
   /**
    * Handles different types of storage errors with appropriate logging.
    */
-  private handleStorageError(error: unknown, operation: string, key: StorageKey): void {
+  private handleStorageError(error: unknown, operation: string, key: LocalStorageKey): void {
     if (error instanceof DOMException) {
       switch (error.name) {
         case 'QuotaExceededError':
           console.error(
             `[StorageService] Quota exceeded during ${operation} on "${key}". ` +
-              `Current size: ${this.getStorageSize()} bytes`
+              `Current size: ${this.getStorageSize()} bytes`,
           );
           break;
         case 'SecurityError':
           console.error(
-            `[StorageService] Security error during ${operation} (possibly private browsing mode)`
+            `[StorageService] Security error during ${operation} (possibly private browsing mode)`,
           );
           break;
         default:
           console.error(
-            `[StorageService] DOM Exception "${error.name}" during ${operation} on "${key}"`
+            `[StorageService] DOM Exception "${error.name}" during ${operation} on "${key}"`,
           );
       }
     } else if (error instanceof SyntaxError) {
@@ -226,18 +225,18 @@ export class LocalStorageService {
    * Attempts to free up space by removing less critical items.
    * Priority: NEXT_PAGE_TOKEN < SORT < STATE
    */
-  private freeUpSpace(failedKey: StorageKey): void {
+  private freeUpSpace(failedKey: LocalStorageKey): void {
     console.warn('[StorageService] Attempting to free up localStorage space...');
 
     // Priority order for deletion (least to most important)
-    const priorityOrder: StorageKey[] = [
-      StorageKey.NEXT_PAGE_TOKEN,
-      StorageKey.SORT,
-      StorageKey.STATE,
+    const priorityOrder: LocalStorageKey[] = [
+      LOCAL_STORAGE_KEYS.NEXT_PAGE_TOKEN,
+      LOCAL_STORAGE_KEYS.SORT,
+      LOCAL_STORAGE_KEYS.STATE,
     ];
 
     for (const key of priorityOrder) {
-      if (key === failedKey || key === StorageKey.GAPI_TOKEN) {
+      if (key === failedKey || key === LOCAL_STORAGE_KEYS.GAPI_TOKEN) {
         continue; // Don't remove the key we're trying to save or auth token
       }
 

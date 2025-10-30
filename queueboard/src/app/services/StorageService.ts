@@ -2,14 +2,11 @@ import { Injectable, PLATFORM_ID, inject } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { PlaylistColumn, VideoCard } from './playlist.service';
 import { IndexedDbService } from './indexed-db.service';
-
-export enum StorageKey {
-  SORT = 'queueboard_sort_v1',
-  PLAYLIST_SORT_ORDER = 'queueboard_sort_order_v1',
-  GAPI_TOKEN = 'queueboard_gapi_token',
-  NEXT_PAGE_TOKEN = 'queueboard_next_page_token_v1',
-  DARK_MODE = 'queueboard_dark_mode_v1',
-}
+import { IndexedDbStorageService } from './IndexedDbStorageService';
+import { LocalStorageService } from './LocalStorageService';
+import { IStorage } from './IStorage';
+import { LOCAL_STORAGE_KEYS, LocalStorageKey } from './local-storage-keys';
+// PLATFORM_ID and isPlatformBrowser already imported above
 
 const PLAYLIST_STORE = 'playlists';
 const VIDEO_STORE = 'videos';
@@ -17,11 +14,15 @@ const VIDEO_STORE = 'videos';
 @Injectable({
   providedIn: 'root',
 })
-export class StorageService {
+export class StorageService implements IStorage {
   private platformId = inject(PLATFORM_ID);
   private indexedDb = inject(IndexedDbService);
+  private idbStorage = inject(IndexedDbStorageService);
+  private localStorageSvc = inject(LocalStorageService);
+  // cached result for IndexedDB usability check
+  private _indexedDbAvailable: boolean | null = null;
 
-  setItem<T>(key: StorageKey, value: T): boolean {
+  setItem<T>(key: LocalStorageKey, value: T): boolean {
     if (!isPlatformBrowser(this.platformId)) {
       return false;
     }
@@ -36,7 +37,7 @@ export class StorageService {
     }
   }
 
-  getItem<T>(key: StorageKey, defaultValue: T | null = null): T | null {
+  getItem<T>(key: LocalStorageKey, defaultValue: T | null = null): T | null {
     if (!isPlatformBrowser(this.platformId)) {
       return defaultValue;
     }
@@ -56,7 +57,7 @@ export class StorageService {
     }
   }
 
-  removeItem(key: StorageKey): boolean {
+  removeItem(key: LocalStorageKey): boolean {
     if (!isPlatformBrowser(this.platformId)) {
       return false;
     }
@@ -71,16 +72,18 @@ export class StorageService {
   }
 
   async clear(): Promise<boolean> {
-    if (!isPlatformBrowser(this.platformId)) {
-      return false;
-    }
+    if (!isPlatformBrowser(this.platformId)) return false;
 
     try {
-      Object.values(StorageKey).forEach((key) => {
-        localStorage.removeItem(key);
+      // Always clear localStorage keys
+      Object.values(LOCAL_STORAGE_KEYS).forEach((k) => {
+        localStorage.removeItem(k);
       });
-      await this.indexedDb.clearStore(PLAYLIST_STORE);
-      await this.indexedDb.clearStore(VIDEO_STORE);
+
+      if (await this.isIndexedDbAvailable()) {
+        await this.indexedDb.clearStore(PLAYLIST_STORE);
+        await this.indexedDb.clearStore(VIDEO_STORE);
+      }
       return true;
     } catch (error) {
       console.error('[StorageService] Failed to clear storage:', error);
@@ -107,63 +110,72 @@ export class StorageService {
     if (!isPlatformBrowser(this.platformId)) {
       return null;
     }
-
-    const playlists = await this.indexedDb.getAll<PlaylistColumn>(PLAYLIST_STORE);
-    if (!playlists || playlists.length === 0) {
-      return null;
+    // Prefer IndexedDB when available, otherwise fallback to LocalStorage
+    if (await this.idbStorage.isAvailable()) {
+      const playlists = await this.idbStorage.getPlaylists();
+      if (!playlists || playlists.length === 0) {
+        return null;
+      }
+      return playlists;
     }
 
-    for (const playlist of playlists) {
-      const videos = await this.indexedDb.getVideosByPlaylist(playlist.id);
-      playlist.videos = videos.map((video: any) => {
-        if (video.thumbnailBlob) {
-          video.thumbnailUrl = URL.createObjectURL(video.thumbnailBlob);
-        }
-        return video;
-      });
-    }
-
-    return playlists;
+    // Fallback: use LocalStorageService which stores the full state in localStorage
+    return this.localStorageSvc.getPlaylists();
   }
 
   async savePlaylists(playlists: PlaylistColumn[]): Promise<void> {
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
+    if (await this.idbStorage.isAvailable()) {
+      await this.idbStorage.savePlaylists(playlists);
+      return;
+    }
 
-    for (const playlist of playlists) {
-      const { videos, ...playlistData } = playlist;
-      await this.indexedDb.put(PLAYLIST_STORE, playlistData);
+    // Fallback: store full playlists array in localStorage
+    await this.localStorageSvc.savePlaylists(playlists);
+  }
 
-      if (videos) {
-        for (const video of videos) {
-          const videoWithPlaylistId = { ...video, playlistId: playlist.id };
-          if (video.thumbnail && !video.thumbnailBlob) {
-            try {
-              const response = await fetch(video.thumbnail);
-              const blob = await response.blob();
-              videoWithPlaylistId.thumbnailBlob = blob;
-            } catch (error) {
-              console.error(`Failed to fetch thumbnail for video ${video.id}:`, error);
-            }
-          }
-          await this.indexedDb.put(VIDEO_STORE, videoWithPlaylistId);
-        }
-      }
+  /**
+   * Lightweight check to determine if IndexedDB is usable in this environment.
+   * Caches the result after the first probe.
+   */
+  private async isIndexedDbAvailable(): Promise<boolean> {
+    if (this._indexedDbAvailable !== null) return this._indexedDbAvailable;
+    if (!isPlatformBrowser(this.platformId)) {
+      this._indexedDbAvailable = false;
+      return false;
+    }
+
+    // Basic feature detection
+    if (typeof indexedDB === 'undefined') {
+      this._indexedDbAvailable = false;
+      return false;
+    }
+
+    // Probe by attempting a small read; if it throws or rejects, mark unavailable
+    try {
+      await this.indexedDb.getAll(PLAYLIST_STORE);
+      this._indexedDbAvailable = true;
+      return true;
+    } catch (e) {
+      console.warn('[StorageService] IndexedDB unavailable, falling back to localStorage', e);
+      this._indexedDbAvailable = false;
+      return false;
     }
   }
 
-  private handleStorageError(error: unknown, operation: string, key: StorageKey): void {
+  private handleStorageError(error: unknown, operation: string, key: LocalStorageKey): void {
     if (error instanceof DOMException) {
       switch (error.name) {
         case 'SecurityError':
           console.error(
-            `[StorageService] Security error during ${operation} (possibly private browsing mode)`
+            `[StorageService] Security error during ${operation} (possibly private browsing mode)`,
           );
           break;
         default:
           console.error(
-            `[StorageService] DOM Exception "${error.name}" during ${operation} on "${key}"`
+            `[StorageService] DOM Exception "${error.name}" during ${operation} on "${key}"`,
           );
       }
     } else if (error instanceof SyntaxError) {

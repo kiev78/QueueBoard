@@ -30,7 +30,8 @@ import {
   YouTubePlaylistItem,
 } from '../services/youtube-api.types';
 import { PollingService } from '../services/PollingService';
-import { StorageKey, StorageService } from '../services/StorageService';
+import { StorageService } from '../services/StorageService';
+import { LOCAL_STORAGE_KEYS as StorageKey, LocalStorageKey } from '../services/local-storage-keys';
 import { ErrorHandlerService, AppError, ErrorSeverity } from '../services/ErrorHandlerService';
 import { ToastService } from '../services/toast.service';
 import { PlayerManagerService } from '../services/PlayerManagerService';
@@ -99,7 +100,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
               matchText(v.title) ||
               matchText(v.description) ||
               (v.tags && v.tags.some((t) => matchText(t))) ||
-              matchText(v.channelTitle)
+              matchText(v.channelTitle),
           );
 
           if (filter === 'list') {
@@ -142,7 +143,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     return sorted;
   });
   hasPlaylists = computed(
-    () => this.playlists().length > 0 && this.playlists()[0]?.id !== 'loading'
+    () => this.playlists().length > 0 && this.playlists()[0]?.id !== 'loading',
   );
   connecting = signal(false);
   error = signal<string | null>(null);
@@ -307,7 +308,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
       if (this.pollingInterval) clearInterval(this.pollingInterval);
       this.pollingInterval = setInterval(
         () => this.refresh(),
-        environment.pollingIntervalMinutes * 60 * 1000
+        environment.pollingIntervalMinutes * 60 * 1000,
       );
     } catch (err) {
       const appErr = this.errorHandler.handleYouTubeError(err, 'connectYouTube');
@@ -363,15 +364,15 @@ export class OrganizerComponent implements OnInit, OnDestroy {
               youtubeUrl: v.contentDetails?.videoId
                 ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}`
                 : '',
-            })
+            }),
           );
-          
+
           return { ...pl, videos: mappedVideos };
         } catch (e) {
           console.error('Failed to load playlist items for', pl.id, e);
           return pl; // Return the playlist without videos on error
         }
-      })
+      }),
     );
 
     // Set the playlists signal once with all the data
@@ -385,7 +386,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     // Pagination disabled - this method is kept for future use
     // TODO: Re-enable by checking nextPageToken and using it for pagination
     console.log(
-      'FetchMorePlaylists disabled - pagination removed. All playlists are loaded initially.'
+      'FetchMorePlaylists disabled - pagination removed. All playlists are loaded initially.',
     );
     return;
 
@@ -520,7 +521,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         event.previousContainer.data,
         event.container.data,
         event.previousIndex,
-        event.currentIndex
+        event.currentIndex,
       );
 
       this.syncMove(videoToMove, sourcePlaylistId, destPlaylistId).catch((err) => {
@@ -660,7 +661,7 @@ export class OrganizerComponent implements OnInit, OnDestroy {
     if (!videoId) {
       const appErr = this.errorHandler.handleError(
         'Could not parse a YouTube video id from the provided value.',
-        'addVideo'
+        'addVideo',
       );
       this.toast.show(appErr.message, appErr.severity);
       return;
