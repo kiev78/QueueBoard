@@ -81,29 +81,41 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   playlists = signal<PlaylistColumn[]>([]);
   private preloadedAllVideos = false;
   preloading = signal(false);
+  searchFilter = signal<'all' | 'list' | 'video'>('all');
   filteredPlaylists = computed(() => {
     const q = (this.search || '').trim().toLowerCase();
+    const filter = this.searchFilter();
     let filtered = this.playlists();
 
     if (q) {
       const matchText = (text?: string) => (text || '').toLowerCase().includes(q);
+
       filtered = this.playlists()
         .map((pl) => {
-          const videos = (pl.videos || []).filter((v) => {
-            if (matchText(v.title)) return true;
-            if (matchText(v.description)) return true;
-            if (v.tags && v.tags.some((t: string) => matchText(t))) return true;
-            if (matchText(v.channelTitle)) return true;
-            return false;
-          });
+          const playlistTitleMatches = matchText(pl.title) || matchText(pl.description);
 
-          const playlistMatches = matchText(pl.title) || matchText(pl.description);
-          if (playlistMatches) {
-            return { ...pl, videos: pl.videos } as PlaylistColumn;
+          const matchingVideos = (pl.videos || []).filter(
+            (v) =>
+              matchText(v.title) ||
+              matchText(v.description) ||
+              (v.tags && v.tags.some((t) => matchText(t))) ||
+              matchText(v.channelTitle)
+          );
+
+          if (filter === 'list') {
+            return playlistTitleMatches ? pl : null;
           }
 
-          if (videos.length > 0) {
-            return { ...pl, videos } as PlaylistColumn;
+          if (filter === 'video') {
+            return matchingVideos.length > 0 ? { ...pl, videos: matchingVideos } : null;
+          }
+
+          // filter === 'all'
+          if (playlistTitleMatches) {
+            return pl;
+          }
+          if (matchingVideos.length > 0) {
+            return { ...pl, videos: matchingVideos };
           }
 
           return null;

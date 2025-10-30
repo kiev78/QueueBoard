@@ -50,6 +50,17 @@
       (click)="onSearchFocus()"
     />
 
+    <div class="btn-group" role="group" aria-label="Search filter">
+      <input type="radio" class="btn-check" name="searchFilter" id="searchAll" value="all" [(ngModel)]="searchFilter" />
+      <label class="btn btn-outline-primary" for="searchAll">All</label>
+
+      <input type="radio" class="btn-check" name="searchFilter" id="searchPlaylists" value="list" [(ngModel)]="searchFilter" />
+      <label class="btn btn-outline-primary" for="searchPlaylists">Playlists</label>
+
+      <input type="radio" class="btn-check" name="searchFilter" id="searchVideos" value="video" [(ngModel)]="searchFilter" />
+      <label class="btn btn-outline-primary" for="searchVideos">Videos</label>
+    </div>
+
     <div class="sort-and-add" [class.expanded]="showAddPlaylist()">
       @if (!showAddPlaylist()) {
       <select
@@ -121,11 +132,16 @@
       <!-- Regular Playlist Column -->
       @if (playlist.id !== 'load-more-sentinel') {
       <div class="card playlist-card" cdkDrag>
-        <div class="card-header">
+        <div class="card-header d-flex justify-content-between align-items-center">
           <div class="fw-bold">
-            {{ playlist.title }}
-            <span class="text-muted small">{{ playlist.videos.length }} videos</span>
+            <a
+              [href]="'https://www.youtube.com/playlist?list=' + playlist.id"
+              target="_blank"
+              rel="noopener"
+              [title]="'Open playlist ' + playlist.title + ' on YouTube'"
+            >{{ playlist.title }}</a>
           </div>
+          <span class="text-muted small">{{ playlist.videos.length }} videos</span>
         </div>
         <div class="card-body">
           <div
