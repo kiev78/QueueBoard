@@ -20,15 +20,15 @@ import {
   DragDropModule,
 } from '@angular/cdk/drag-drop';
 import { FormsModule } from '@angular/forms';
-import { YoutubeApiService } from '../services';
-import { environment } from '../../env/environment';
-import { VideoPlayerComponent } from './video-player/video-player.component';
-import { MinimizedVideosComponent } from './minimized-videos/minimized-videos.component';
+import { YoutubeApiService } from '../shared/services/youtube-api.service';
 import {
   NormalizedPlaylistVideo,
   YouTubePlaylist,
   YouTubePlaylistItem,
-} from '../services/youtube-api.types';
+} from '../shared/services/youtube-api.types';
+import { environment } from '../../env/environment';
+import { VideoPlayerComponent } from './video-player/video-player.component';
+import { MinimizedVideosComponent } from './minimized-videos/minimized-videos.component';
 import { PollingService } from '../services/PollingService';
 import { StorageKey, StorageService } from '../services/StorageService';
 import { ErrorHandlerService, AppError, ErrorSeverity } from '../services/ErrorHandlerService';

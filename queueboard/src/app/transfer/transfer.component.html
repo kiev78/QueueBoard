@@ -1,0 +1,26 @@
+<div class="transfer-container">
+  <h2>Transfer Playlists</h2>
+  <p>Connect your accounts to transfer playlists between services.</p>
+  <div class="button-group">
+    <button class="btn btn-danger" (click)="connectGoogle()" [disabled]="connecting() || trans_google()">
+      @if (connecting()) {
+        <span>Connecting...</span>
+      } @else if (trans_google()) {
+        <span>Connected to Google</span>
+      } @else {
+        <span>Connect Google</span>
+      }
+    </button>
+    <button class="btn btn-success" [disabled]="true">Connect Spotify</button>
+  </div>
+
+  @if (trans_google()) {
+    <div class="playlist-info">
+      <p>{{ googlePlaylists().length }} playlists loaded from Google.</p>
+    </div>
+  }
+
+  <div class="transfer-button-container">
+    <button class="btn btn-primary" [disabled]="!trans_google() || !trans_spotify()">Transfer</button>
+  </div>
+</div>

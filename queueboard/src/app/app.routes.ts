@@ -1,5 +1,4 @@
 import { Routes } from '@angular/router';
-import { provideRoutes } from '@angular/router';
 
 export const routes: Routes = [
 	{
@@ -10,5 +9,9 @@ export const routes: Routes = [
 	{
 		path: 'organizer',
 		loadComponent: () => import('./organizer/organizer.component').then(m => m.OrganizerComponent)
+	},
+	{
+		path: 'transfer',
+		loadComponent: () => import('./transfer/transfer.component').then(m => m.TransferComponent)
 	}
 ];

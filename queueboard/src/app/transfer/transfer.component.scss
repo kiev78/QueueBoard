@@ -1,0 +1,27 @@
+.transfer-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+}
+
+h2 {
+  margin-bottom: 1rem;
+}
+
+p {
+  margin-bottom: 2rem;
+  max-width: 400px;
+}
+
+.button-group {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.transfer-button-container {
+  margin-top: 1rem;
+}

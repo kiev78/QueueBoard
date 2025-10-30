@@ -9,6 +9,7 @@ export enum StorageKey {
   GAPI_TOKEN = 'queueboard_gapi_token',
   NEXT_PAGE_TOKEN = 'queueboard_next_page_token_v1',
   DARK_MODE = 'queueboard_dark_mode_v1',
+  TRANSFER_GOOGLE = 'queueboard_transfer_google_v1',
 }
 
 /**
