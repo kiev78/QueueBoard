@@ -1,27 +1,120 @@
+
+/* Shared dark list styles (use module syntax to avoid deprecation) */
+@use '../../app/styles/dark-lists' as *;
+
+/* Root container keeps vertical flow; no forced centering so lists span width */
 .transfer-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-  text-align: center;
+  display: block;
+  width: 100%;
+  min-height: 100%;
 }
 
-h2 {
-  margin-bottom: 1rem;
+/* Main page body gets the padding so the navbar can stay full-bleed if desired */
+.transfer-body {
+  padding: 20px;
 }
 
-p {
-  margin-bottom: 2rem;
-  max-width: 400px;
+/* Intro section spacing */
+.intro {
+  border-bottom: 1px solid var(--color-border);
 }
 
-.button-group {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 2rem;
+/* Navbar tweaks */
+.transfer-navbar {
+  background-color: var(--color-primary);
+  color: var(--color-light);
+}
+.transfer-navbar.dark {
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Make the navbar full-bleed by negating the page padding so the rest of the
+   page can keep 20px padding while the top bar spans the viewport edge-to-edge. */
+/* Ensure navbar content aligns with the page body padding */
+.transfer-navbar {
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+/* Navbar brand contrast tweaks */
+.transfer-navbar .navbar-brand {
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
+}
+.transfer-navbar.dark .navbar-brand {
+  /* In dark mode, use the surface text color for high contrast */
+  color: var(--color-text, #e2e8f0) !important;
 }
 
 .transfer-button-container {
-  margin-top: 1rem;
+  margin: 2rem 0;
+  text-align: center;
+}
+
+
+/* List spacing */
+.list-group {
+  margin-bottom: 1.5rem;
+}
+
+.list-group .list-group-item {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.list-group .list-group-item.list-group-item-dark {
+  background: var(--color-surface);
+  border-color: rgba(255,255,255,0.06);
+}
+
+.search-container .input-group {
+  max-width: 420px;
+}
+
+.playlist-info {
+  padding-left: 0.25rem;
+}
+
+/* Playlist video numbered list styles */
+.playlist-video-list {
+  counter-reset: video-counter;
+  padding-left: 1rem;
+  margin: 0.5rem 0 0 0;
+  list-style: none;
+}
+
+.playlist-video-list li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--video-border, rgba(0,0,0,0.06));
+  border-left-width: 4px;
+  border-radius: 4px;
+  margin-bottom: 0.4rem;
+  background: transparent;
+}
+
+.playlist-video-list .video-index {
+  color: var(--color-primary);
+  font-weight: 600;
+  min-width: 2rem;
+}
+
+.playlist-number {
+  min-width: 2rem;
+  display: inline-block;
+}
+
+.playlist-video-list .video-title {
+  color: var(--color-text);
+  flex: 1 1 auto;
+}
+
+/* Dark mode: make borders lighter for contrast */
+body.dark-mode .playlist-video-list li {
+  --video-border: rgba(255,255,255,0.08);
 }
