@@ -6,6 +6,7 @@ import { IndexedDbStorageService } from './IndexedDbStorageService';
 import { LocalStorageService } from './LocalStorageService';
 import { IStorage } from './IStorage';
 import { LOCAL_STORAGE_KEYS, LocalStorageKey } from './local-storage-keys';
+import { FORCE_LOCAL_STORAGE } from './storage.tokens';
 // PLATFORM_ID and isPlatformBrowser already imported above
 
 const PLAYLIST_STORE = 'playlists';
@@ -19,6 +20,14 @@ export class StorageService implements IStorage {
   private indexedDb = inject(IndexedDbService);
   private idbStorage = inject(IndexedDbStorageService);
   private localStorageSvc = inject(LocalStorageService);
+  // optional injection token to force using localStorage (fallback) in tests/environments
+  private forceLocal = (() => {
+    try {
+      return inject(FORCE_LOCAL_STORAGE, { optional: true });
+    } catch {
+      return undefined as unknown as boolean | undefined;
+    }
+  })();
   // cached result for IndexedDB usability check
   private _indexedDbAvailable: boolean | null = null;
 
@@ -110,8 +119,8 @@ export class StorageService implements IStorage {
     if (!isPlatformBrowser(this.platformId)) {
       return null;
     }
-    // Prefer IndexedDB when available, otherwise fallback to LocalStorage
-    if (await this.idbStorage.isAvailable()) {
+    // If forceLocal is set, prefer localStorage. Otherwise prefer IndexedDB when available.
+    if (!this.forceLocal && (await this.idbStorage.isAvailable())) {
       const playlists = await this.idbStorage.getPlaylists();
       if (!playlists || playlists.length === 0) {
         return null;
@@ -127,7 +136,7 @@ export class StorageService implements IStorage {
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
-    if (await this.idbStorage.isAvailable()) {
+    if (!this.forceLocal && (await this.idbStorage.isAvailable())) {
       await this.idbStorage.savePlaylists(playlists);
       return;
     }
@@ -143,6 +152,12 @@ export class StorageService implements IStorage {
   private async isIndexedDbAvailable(): Promise<boolean> {
     if (this._indexedDbAvailable !== null) return this._indexedDbAvailable;
     if (!isPlatformBrowser(this.platformId)) {
+      this._indexedDbAvailable = false;
+      return false;
+    }
+
+    // Honor forceLocal: when true, do not use IndexedDB
+    if (this.forceLocal) {
       this._indexedDbAvailable = false;
       return false;
     }
