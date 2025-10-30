@@ -211,9 +211,16 @@ export class YoutubeApiService {
     return !!this.accessToken;
   }
 
+  /**
+   * Fetch user's playlists from YouTube.
+   * @param pageToken - Optional page token for pagination
+   * @param maxResults - Maximum number of results to fetch
+   * @returns - YouTube API response with playlists
+   */
+
   async fetchPlaylists(pageToken?: string, maxResults = 50) {
     if (!this.accessToken) throw new Error('Not authenticated');
-    // Fetch all playlists by setting a high maxResults
+   
     // TODO: Re-enable pagination by uncommenting pageToken usage and reducing maxResults
     const params: any = { mine: true, maxResults }; // , pageToken (disabled for now)
     const res = await window.gapi.client.youtube.playlists.list({
