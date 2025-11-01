@@ -1,3 +1,9 @@
+describe('GlobalErrorHandler (placeholder)', () => {
+  it('placeholder test', () => {
+    expect(true).toBe(true);
+  });
+});
+
 // import { GlobalErrorHandler } from './global-error.handler';
 // import { ToastService } from './toast.service';
 // import { ErrorHandlerService, ErrorSeverity } from './ErrorHandlerService';

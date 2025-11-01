@@ -12,6 +12,6 @@ export interface IStorage {
 
   // Async methods for larger operations that may use IndexedDB
   clear(): Promise<boolean>;
-  getPlaylists(): Promise<PlaylistColumn[] | null>;
-  savePlaylists(playlists: PlaylistColumn[]): Promise<void>;
+  getPlaylists(service?: 'google' | 'spotify'): Promise<PlaylistColumn[] | null>;
+  savePlaylists(playlists: PlaylistColumn[], service?: 'google' | 'spotify'): Promise<void>;
 }

@@ -1,5 +1,6 @@
 export const LOCAL_STORAGE_KEYS = {
   STATE: 'queueboard_state_v1',
+  SPOTIFY_STATE: 'queueboard_spotify_state_v1',
   SORT: 'queueboard_sort_v1',
   PLAYLIST_SORT_ORDER: 'queueboard_sort_order_v1',
   GAPI_TOKEN: 'queueboard_gapi_token',

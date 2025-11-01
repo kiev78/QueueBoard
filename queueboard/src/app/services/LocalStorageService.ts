@@ -163,17 +163,19 @@ export class LocalStorageService implements IStorage {
   }
 
   // Async playlist methods to satisfy IStorage (IndexedDB allocator expects async)
-  async getPlaylists(): Promise<PlaylistColumn[] | null> {
-    return this.getItem<PlaylistColumn[]>(LOCAL_STORAGE_KEYS.STATE);
+  async getPlaylists(service?: 'google' | 'spotify'): Promise<PlaylistColumn[] | null> {
+    const key = service === 'spotify' ? LOCAL_STORAGE_KEYS.SPOTIFY_STATE : LOCAL_STORAGE_KEYS.STATE;
+    return this.getItem<PlaylistColumn[]>(key);
   }
 
   // Keep synchronous helper for callers that expect immediate return
-  savePlaylistsSync(playlists: PlaylistColumn[]): void {
-    this.setItem(LOCAL_STORAGE_KEYS.STATE, playlists);
+  savePlaylistsSync(playlists: PlaylistColumn[], service?: 'google' | 'spotify'): void {
+    const key = service === 'spotify' ? LOCAL_STORAGE_KEYS.SPOTIFY_STATE : LOCAL_STORAGE_KEYS.STATE;
+    this.setItem(key, playlists);
   }
 
-  async savePlaylists(playlists: PlaylistColumn[]): Promise<void> {
-    this.savePlaylistsSync(playlists);
+  async savePlaylists(playlists: PlaylistColumn[], service?: 'google' | 'spotify'): Promise<void> {
+    this.savePlaylistsSync(playlists, service);
   }
 
   /**

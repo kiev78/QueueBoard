@@ -65,15 +65,16 @@ export class IndexedDbStorageService implements IStorage {
     }
   }
 
-  async getPlaylists(): Promise<PlaylistColumn[] | null> {
+  async getPlaylists(service?: 'google' | 'spotify'): Promise<PlaylistColumn[] | null> {
     if (!isPlatformBrowser(this.platformId)) return null;
 
     try {
-      const playlists = await this.indexedDb.getAll<PlaylistColumn>(PLAYLIST_STORE);
+      const { playlistStore } = this.indexedDb.getStoreNames(service);
+      const playlists = await this.indexedDb.getAll<PlaylistColumn>(playlistStore);
       if (!playlists || playlists.length === 0) return null;
 
       for (const playlist of playlists) {
-        const videos = await this.indexedDb.getVideosByPlaylist(playlist.id);
+        const videos = await this.indexedDb.getVideosByPlaylist(playlist.id, service);
         playlist.videos = videos.map((video: any) => {
           if (video.thumbnailBlob) {
             video.thumbnailUrl = URL.createObjectURL(video.thumbnailBlob);
@@ -89,13 +90,15 @@ export class IndexedDbStorageService implements IStorage {
     }
   }
 
-  async savePlaylists(playlists: PlaylistColumn[]): Promise<void> {
+  async savePlaylists(playlists: PlaylistColumn[], service?: 'google' | 'spotify'): Promise<void> {
     if (!isPlatformBrowser(this.platformId)) return;
+
+    const { playlistStore, videoStore } = this.indexedDb.getStoreNames(service);
 
     for (const playlist of playlists) {
       const { videos, ...playlistData } = playlist;
       try {
-        await this.indexedDb.put(PLAYLIST_STORE, playlistData);
+        await this.indexedDb.put(playlistStore, playlistData);
       } catch (e) {
         console.error('[IndexedDbStorageService] Failed to put playlist', e);
       }
@@ -113,7 +116,7 @@ export class IndexedDbStorageService implements IStorage {
             }
           }
           try {
-            await this.indexedDb.put(VIDEO_STORE, videoWithPlaylistId);
+            await this.indexedDb.put(videoStore, videoWithPlaylistId);
           } catch (e) {
             console.error('[IndexedDbStorageService] Failed to put video', e);
           }

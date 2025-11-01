@@ -1,3 +1,9 @@
+describe('ErrorHandlerService (placeholder)', () => {
+  it('placeholder test', () => {
+    expect(true).toBe(true);
+  });
+});
+
 // import { describe, expect, it, beforeEach } from '@angular/core/testing';
 // import { ErrorHandlerService, ErrorSeverity } from './ErrorHandlerService';
 

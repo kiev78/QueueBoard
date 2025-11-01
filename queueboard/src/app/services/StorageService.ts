@@ -115,13 +115,13 @@ export class StorageService implements IStorage {
     }
   }
 
-  async getPlaylists(): Promise<PlaylistColumn[] | null> {
+  async getPlaylists(service?: 'google' | 'spotify'): Promise<PlaylistColumn[] | null> {
     if (!isPlatformBrowser(this.platformId)) {
       return null;
     }
     // If forceLocal is set, prefer localStorage. Otherwise prefer IndexedDB when available.
     if (!this.forceLocal && (await this.idbStorage.isAvailable())) {
-      const playlists = await this.idbStorage.getPlaylists();
+      const playlists = await this.idbStorage.getPlaylists(service);
       if (!playlists || playlists.length === 0) {
         return null;
       }
@@ -129,20 +129,20 @@ export class StorageService implements IStorage {
     }
 
     // Fallback: use LocalStorageService which stores the full state in localStorage
-    return this.localStorageSvc.getPlaylists();
+    return this.localStorageSvc.getPlaylists(service);
   }
 
-  async savePlaylists(playlists: PlaylistColumn[]): Promise<void> {
+  async savePlaylists(playlists: PlaylistColumn[], service?: 'google' | 'spotify'): Promise<void> {
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
     if (!this.forceLocal && (await this.idbStorage.isAvailable())) {
-      await this.idbStorage.savePlaylists(playlists);
+      await this.idbStorage.savePlaylists(playlists, service);
       return;
     }
 
     // Fallback: store full playlists array in localStorage
-    await this.localStorageSvc.savePlaylists(playlists);
+    await this.localStorageSvc.savePlaylists(playlists, service);
   }
 
   /**

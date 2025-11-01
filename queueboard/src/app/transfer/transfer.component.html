@@ -40,6 +40,16 @@
         >
           Load saved
         </button>
+        <!-- Migration button for existing data -->
+        <button
+          class="btn btn-outline-warning btn-sm"
+          type="button"
+          (click)="migrateDatabase()"
+          [disabled]="connecting()"
+          title="Copy playlists from legacy storage to Google storage"
+        >
+          [UpdateDB]
+        </button>
       </div>
     </div>
   </nav>
@@ -64,9 +74,29 @@
             <span>Connect Google</span>
           }
         </button>
-        <button class="btn btn-success" disabled title="Spotify integration coming soon">
-          Connect Spotify (soon)
+        <button class="btn btn-success" (click)="connectSpotify()" [disabled]="connecting()">
+          @if (connecting()) {
+            <span>Connecting…</span>
+          } @else if (trans_spotify()) {
+            <span>Re-connect Spotify</span>
+          } @else {
+            <span>Connect Spotify</span>
+          }
         </button>
+        @if (trans_spotify()) {
+          <button
+            class="btn btn-outline-success"
+            (click)="loadAllSpotifyData()"
+            [disabled]="connecting()"
+            title="Load all playlists with complete track data"
+          >
+            @if (connecting()) {
+              <span>Loading All Data…</span>
+            } @else {
+              <span>Load All Tracks</span>
+            }
+          </button>
+        }
       </div>
     </div>
 
@@ -131,7 +161,73 @@
           </li>
         </ul>
       </div>
+    }
 
+    @if (trans_spotify()) {
+      <div class="playlist-info container-fluid mb-2 text-muted small">
+        {{ spotifyPlaylists().length }} Spotify playlists loaded.
+      </div>
+
+      <div class="search-container container-fluid">
+        <h3 class="h6">Spotify Playlists</h3>
+        <div class="input-group mb-3">
+          <input
+            type="text"
+            class="form-control"
+            placeholder="Filter Spotify playlists"
+            [ngModel]="playlistSearchQuery()"
+            (ngModelChange)="playlistSearchQuery.set($event)"
+          />
+        </div>
+
+        <!-- Dark-mode aware list group for Spotify -->
+        <ul class="list-group" [class.list-group-dark]="isDarkMode()">
+          <li
+            class="list-group-item d-flex flex-column"
+            *ngFor="
+              let playlist of filteredSpotifyPlaylists();
+              let pIndex = index;
+              trackBy: trackById
+            "
+            [class.list-group-item-dark]="isDarkMode()"
+          >
+            <div class="d-flex justify-content-between align-items-center w-100">
+              <div class="d-flex gap-2 align-items-baseline">
+                <span class="playlist-number text-muted small">{{ pIndex + 1 }}.</span>
+                <div class="playlist-title">{{ playlist.title }}</div>
+                <span class="badge bg-success small">Spotify</span>
+              </div>
+              <button
+                class="btn btn-sm btn-outline-success"
+                type="button"
+                (click)="loadVideosForPlaylist(playlist.id)"
+                [disabled]="loadingVideos()[playlist.id]"
+              >
+                <ng-container *ngIf="!loadingVideos()[playlist.id]">
+                  {{ expandedPlaylists()[playlist.id] ? 'Hide' : 'Load songs' }}
+                </ng-container>
+                <ng-container *ngIf="loadingVideos()[playlist.id]">Loading…</ng-container>
+              </button>
+            </div>
+
+            <!-- Only render the numeric list when the playlist is expanded -->
+            <ng-container *ngIf="expandedPlaylists()[playlist.id]">
+              <ol class="mt-2 playlist-video-list">
+                <li
+                  class="small"
+                  *ngFor="let v of playlist.videos; let i = index; trackBy: trackById"
+                >
+                  <span class="video-index">{{ i + 1 }}.</span>
+                  <span class="video-title">{{ v.title }}</span>
+                </li>
+              </ol>
+            </ng-container>
+          </li>
+        </ul>
+      </div>
+    }
+
+    @if (trans_google() || trans_spotify()) {
       <div class="search-container container-fluid mt-4">
         <h3 class="h6">Search for Music Videos</h3>
         <div class="input-group mb-3">
