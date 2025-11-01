@@ -20,12 +20,12 @@ import {
   DragDropModule,
 } from '@angular/cdk/drag-drop';
 import { FormsModule } from '@angular/forms';
-import { YoutubeApiService } from '../shared/services/youtube-api.service';
+import { YoutubeApiService } from '../services/youtube-api.service';
 import {
   NormalizedPlaylistVideo,
   YouTubePlaylist,
   YouTubePlaylistItem,
-} from '../shared/services/youtube-api.types';
+} from '../services/youtube-api.types';
 import { environment } from '../../env/environment';
 import { VideoPlayerComponent } from './video-player/video-player.component';
 import { MinimizedVideosComponent } from './minimized-videos/minimized-videos.component';

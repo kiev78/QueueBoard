@@ -1,6 +1,9 @@
 import { Injectable, PLATFORM_ID, inject } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import { environment } from '../../../env/environment';
+import { environment } from '../../env/environment';
+import { ToastService } from './toast.service';
+import { App } from '../app';
+import { ErrorSeverity } from './ErrorHandlerService';
 
 export interface SpotifyPlaylist {
   id: string;
@@ -67,6 +70,7 @@ export class SpotifyApiService {
   private readonly TOKEN_KEY = 'queueboard_spotify_token';
   private readonly REFRESH_KEY = 'queueboard_spotify_refresh';
   private readonly EXPIRY_KEY = 'queueboard_spotify_expiry';
+  private toast = inject(ToastService);
 
   constructor() {
     if (!environment.spotifyClientId) {
@@ -171,7 +175,11 @@ export class SpotifyApiService {
 
       if (response.items && response.items.length > 0) {
         playlists.push(...response.items);
-        console.log(`Added ${response.items.length} playlists from page ${pageCount}`);
+       // console.log(`Added ${response.items.length} playlists from page ${pageCount}`);
+       this.toast.show(`Added ${response.items.length} playlists from page ${pageCount}`, ErrorSeverity.INFO, 3000);
+      } else {
+        //console.log(`No playlists found on page ${pageCount}`);
+        this.toast.show(`No playlists found on page ${pageCount}`, ErrorSeverity.WARNING, 3000);
       }
 
       url = response.next ? response.next.replace(this.SPOTIFY_API_BASE, '') : null;
@@ -224,11 +232,10 @@ export class SpotifyApiService {
    * This is a comprehensive method that fetches everything at once
    */
   async getAllPlaylistsWithTracks(): Promise<SpotifyPlaylist[]> {
-    console.log('Starting comprehensive Spotify data fetch...');
-
+    
     // First get all playlists
     const playlists = await this.getUserPlaylists();
-    console.log(`Found ${playlists.length} playlists. Now fetching tracks for each...`);
+    this.toast.show(`Found ${playlists.length} playlists. Now fetching tracks for each...`, ErrorSeverity.INFO, 5000);
 
     // Then fetch tracks for each playlist
     const playlistsWithTracks: SpotifyPlaylist[] = [];

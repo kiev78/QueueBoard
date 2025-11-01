@@ -14,6 +14,7 @@ const VIDEO_STORE_SPOTIFY = 'videos_spotify';
   providedIn: 'root',
 })
 export class IndexedDbService {
+
   private db: IDBDatabase | null = null;
   private platformId = inject(PLATFORM_ID);
   private dbReady = new Promise<void>((resolve, reject) => {
@@ -66,6 +67,10 @@ export class IndexedDbService {
     };
   });
 
+  getSpotifyPlaylists() {
+    return this.getAll<any>(PLAYLIST_STORE_SPOTIFY);
+  }
+  
   // Helper to get store names based on service
   getStoreNames(service?: 'google' | 'spotify'): { playlistStore: string; videoStore: string } {
     if (service === 'google') {

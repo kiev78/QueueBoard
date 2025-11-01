@@ -115,6 +115,14 @@ export class StorageService implements IStorage {
     }
   }
 
+  async getGooglePlaylists(): Promise<PlaylistColumn[] | null> {
+    return this.getPlaylists('google');
+  }
+
+  async getSpotifyPlaylists(): Promise<PlaylistColumn[] | null> {
+    return this.getPlaylists('spotify');
+  }
+
   async getPlaylists(service?: 'google' | 'spotify'): Promise<PlaylistColumn[] | null> {
     if (!isPlatformBrowser(this.platformId)) {
       return null;

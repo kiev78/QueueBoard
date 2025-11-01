@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
-import { environment } from '../../../env/environment';
+import { environment } from '../../env/environment';
 import { YouTubeApiResponse, YouTubePlaylist, YouTubePlaylistItem } from './youtube-api.types';
-import { LOCAL_STORAGE_KEYS as StorageKey, LocalStorageKey } from '../../services/local-storage-keys';
+import { LOCAL_STORAGE_KEYS as StorageKey, LocalStorageKey } from './local-storage-keys';
 
 declare global {
   interface Window {

@@ -2,9 +2,9 @@ import { Component, inject, signal, OnInit, computed } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { PLATFORM_ID } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { YoutubeApiService } from '../shared/services/youtube-api.service';
-import { YouTubeSearchResult } from '../shared/services/youtube-api.types';
-import { SpotifyApiService, SpotifyPlaylist } from '../shared/services/spotify-api.service';
+import { YoutubeApiService } from '../services/youtube-api.service';
+import { YouTubeSearchResult } from '../services/youtube-api.types';
+import { SpotifyApiService, SpotifyPlaylist } from '../services/spotify-api.service';
 import { StorageService } from '../services/StorageService';
 import { IndexedDbService } from '../services/indexed-db.service';
 import { PlaylistColumn } from '../services/playlist.service';
@@ -60,15 +60,16 @@ export class TransferComponent implements OnInit {
   ngOnInit(): void {
     // Prefer playlists persisted in IndexedDB via StorageService
     (async () => {
-      // Load Google playlists
-      const pls = await this.storage.getPlaylists('google');
+
+      this.toast.show('Loading saved playlists from google…', ErrorSeverity.INFO, 60000);
+      const pls = await this.storage.getGooglePlaylists();
       if (pls && pls.length > 0) {
         this.googlePlaylists.set(pls);
         this.trans_google.set(true);
       }
 
-      // Load Spotify playlists
-      const spotifyPls = await this.storage.getPlaylists('spotify');
+      this.toast.show('Loading saved playlists from spotify…', ErrorSeverity.INFO, 60000);
+      const spotifyPls = await this.storage.getSpotifyPlaylists();
       if (spotifyPls && spotifyPls.length > 0) {
         this.spotifyPlaylists.set(spotifyPls);
         this.trans_spotify.set(true);
@@ -82,15 +83,17 @@ export class TransferComponent implements OnInit {
         }
       }
 
-      // If nothing persisted but user already authenticated (e.g., came from Organizer)
-      if ((!pls || pls.length === 0) && (!spotifyPls || spotifyPls.length === 0)) {
-        try {
-          // Only attempt to load browser-only scripts when running in the browser
-          if (!isPlatformBrowser(this.platformId)) {
-            return;
-          }
+      try {
+        // Only attempt to load browser-only scripts when running in the browser
+        if (!isPlatformBrowser(this.platformId)) {
+          return;
+        }
+
+        // If nothing persisted but user already authenticated (e.g., came from Organizer)
+        if ((!pls || pls.length === 0)) {
+
           // show loading toast while silently fetching (dismissed with success/failure)
-          this.toast.show('Checking for playlists…', ErrorSeverity.INFO, 60000);
+          this.toast.show('Checking for playlists from google…', ErrorSeverity.INFO, 60000);
           await this.youtube.load();
           if (this.youtube.isAuthenticated()) {
             const fetched = await this.youtube.fetchPlaylists();
@@ -112,11 +115,26 @@ export class TransferComponent implements OnInit {
               this.toast.show('No playlists found in your account', ErrorSeverity.WARNING, 2500);
             }
           }
-        } catch (e) {
-          console.warn('Silent playlist fetch failed', e);
-          this.toast.show('Could not silently load playlists', ErrorSeverity.WARNING, 3000);
         }
+
+        if (!spotifyPls || spotifyPls.length === 0) {
+
+          if (this.spotify.isAuthenticated()) {
+            this.toast.show('Loading saved playlists from spotify…', ErrorSeverity.INFO, 60000);
+            const spotifyPls = await this.storage.getSpotifyPlaylists();
+            if (spotifyPls && spotifyPls.length > 0) {
+              this.spotifyPlaylists.set(spotifyPls);
+              this.trans_spotify.set(true);
+              this.toast.show('Playlists restored from your account', ErrorSeverity.INFO, 3000);
+            }
+          }
+        }
+
+      } catch (e) {
+        console.warn('Silent playlist fetch failed', e);
+        this.toast.show('Could not silently load playlists', ErrorSeverity.WARNING, 3000);
       }
+
     })();
   }
 
@@ -346,58 +364,7 @@ export class TransferComponent implements OnInit {
       this.connecting.set(false);
     }
   }
-
-  /**
-   * Migration helper: Copy playlists from legacy stores (playlists/videos) to Google stores
-   */
-  async migrateDatabase(): Promise<void> {
-    if (!isPlatformBrowser(this.platformId)) {
-      return;
-    }
-
-    this.connecting.set(true);
-    try {
-      this.toast.show('Migrating database…', ErrorSeverity.INFO, 60000);
-
-      // Get legacy playlists from the old store
-      const legacyPlaylists = await this.indexedDb.getAll<PlaylistColumn>('playlists');
-
-      if (!legacyPlaylists || legacyPlaylists.length === 0) {
-        this.toast.show('No legacy playlists found to migrate', ErrorSeverity.WARNING, 3000);
-        return;
-      }
-
-      // Load videos for each playlist from the legacy video store
-      for (const playlist of legacyPlaylists) {
-        const videos = await this.indexedDb.getVideosByPlaylist(playlist.id);
-        playlist.videos = videos.map((video: any) => {
-          if (video.thumbnailBlob) {
-            video.thumbnailUrl = URL.createObjectURL(video.thumbnailBlob);
-          }
-          return video;
-        });
-      }
-
-      // Save to the new Google-specific stores
-      await this.storage.savePlaylists(legacyPlaylists, 'google');
-
-      // Update the UI
-      this.googlePlaylists.set(legacyPlaylists);
-      this.trans_google.set(true);
-
-      this.toast.show(
-        `Migrated ${legacyPlaylists.length} playlists to Google storage`,
-        ErrorSeverity.INFO,
-        4000,
-      );
-    } catch (error) {
-      console.error('Failed to migrate database', error);
-      this.toast.show('Database migration failed', ErrorSeverity.ERROR, 4000);
-    } finally {
-      this.connecting.set(false);
-    }
-  }
-
+ 
   // Lazily load videos for a playlist when user clicks "Load videos".
   // Keeps the UI compact until the user explicitly expands a playlist.
   async loadVideosForPlaylist(playlistId: string) {
@@ -416,7 +383,7 @@ export class TransferComponent implements OnInit {
     let playlist: PlaylistColumn | undefined;
     let service: 'google' | 'spotify' | undefined;
     let playlistArray: PlaylistColumn[] = [];
-    let setPlaylistArray: (playlists: PlaylistColumn[]) => void = () => {};
+    let setPlaylistArray: (playlists: PlaylistColumn[]) => void = () => { };
     let idx = -1;
 
     // First check Google playlists
@@ -526,6 +493,12 @@ export class TransferComponent implements OnInit {
     const results = await this.youtube.searchMusicVideos(this.searchQuery());
     this.searchResults.set(results.items);
   }
+
+  async performTransfer() {
+ 
+ 
+  }
+
 
   // Proxy to ThemeService so the template can toggle and read dark mode
   toggleDarkMode(): void {

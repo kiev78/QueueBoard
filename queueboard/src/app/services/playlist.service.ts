@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
-import { YoutubeApiService } from '../shared/services/youtube-api.service';
-import { YouTubePlaylist, YouTubePlaylistItem } from '../shared/services/youtube-api.types';
+import { YoutubeApiService } from './youtube-api.service';
+import { YouTubePlaylist, YouTubePlaylistItem } from './youtube-api.types';
 import { StorageService } from './StorageService';
 
 export interface VideoCardDB {
