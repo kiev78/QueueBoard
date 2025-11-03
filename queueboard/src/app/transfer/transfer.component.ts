@@ -7,7 +7,7 @@ import { YouTubeSearchResult } from '../services/youtube-api.types';
 import { SpotifyApiService, SpotifyPlaylist } from '../services/spotify-api.service';
 import { StorageService } from '../services/StorageService';
 import { IndexedDbService } from '../services/indexed-db.service';
-import { PlaylistColumn } from '../services/playlist.service';
+import { PlaylistColumn, VideoCard } from '../services/playlist.service';
 import { PlaylistService } from '../services/playlist.service';
 import { ThemeService } from '../services/theme.service';
 import { ToastService } from '../services/toast.service';
@@ -33,6 +33,7 @@ export class TransferComponent implements OnInit {
   connecting = signal(false);
   trans_google = signal(false);
   trans_spotify = signal(false);
+  authenticated = signal(false);
 
   googlePlaylists = signal<PlaylistColumn[]>([]);
   spotifyPlaylists = signal<PlaylistColumn[]>([]);
@@ -96,6 +97,7 @@ export class TransferComponent implements OnInit {
           this.toast.show('Checking for playlists from google…', ErrorSeverity.INFO, 60000);
           await this.youtube.load();
           if (this.youtube.isAuthenticated()) {
+            this.authenticated.set(true);
             const fetched = await this.youtube.fetchPlaylists();
             const mapped: PlaylistColumn[] = (fetched.items || []).map((p: any) => ({
               id: p.id,
@@ -187,6 +189,7 @@ export class TransferComponent implements OnInit {
       await this.youtube.load();
       const token = await this.youtube.requestAccessToken();
       if (token) {
+        this.authenticated.set(true);
         const playlists = await this.youtube.fetchPlaylists();
         // Map to internal PlaylistColumn shape (no videos yet)
         const mapped: PlaylistColumn[] = (playlists.items || []).map((p: any) => ({
@@ -464,6 +467,12 @@ export class TransferComponent implements OnInit {
           currExpanded[playlistId] = true;
           this.expandedPlaylists.set(currExpanded);
           this.toast.show('Videos loaded', ErrorSeverity.INFO, 2000);
+
+          // Also ensure the corresponding spotify playlist's songs are loaded for color coding
+          const correspondingSpotifyPlaylist = this.spotifyPlaylists().find(p => p.title.toLowerCase() === updated[0].title.toLowerCase());
+          if (correspondingSpotifyPlaylist && (!correspondingSpotifyPlaylist.videos || correspondingSpotifyPlaylist.videos.length === 0)) {
+              this.loadVideosForPlaylist(correspondingSpotifyPlaylist.id);
+          }
         } else {
           this.toast.show('No videos found for playlist', ErrorSeverity.WARNING, 2500);
         }
@@ -495,9 +504,231 @@ export class TransferComponent implements OnInit {
   }
 
   async performTransfer() {
- 
- 
+    this.connecting.set(true);
+    this.toast.show('Starting playlist transfer from Spotify to YouTube...', ErrorSeverity.INFO, 10000);
+
+    try {
+      // 1. Get all Spotify playlists from component state
+      const spotifyPlaylists = this.spotifyPlaylists();
+      if (!spotifyPlaylists || spotifyPlaylists.length === 0) {
+        this.toast.show('No Spotify playlists loaded to transfer.', ErrorSeverity.WARNING, 3000);
+        return;
+      }
+
+      // 2. Get all existing YouTube playlists from component state
+      const googlePlaylists = this.googlePlaylists();
+      const existingYoutubePlaylistTitles = new Set(
+        googlePlaylists.map((p) => p.title.toLowerCase())
+      );
+
+      this.toast.show(`Found ${spotifyPlaylists.length} Spotify playlists. Checking against existing YouTube playlists...`, ErrorSeverity.INFO, 5000);
+
+      let createdCount = 0;
+      let skippedCount = 0;
+
+      // 3. Iterate over Spotify playlists and create them on YouTube
+      for (const spotifyPlaylist of spotifyPlaylists) {
+        const playlistName = spotifyPlaylist.title;
+        const playlistDescription = spotifyPlaylist.description || '';
+
+        // 4. Check if a playlist with the same name already exists (case-insensitive)
+        if (existingYoutubePlaylistTitles.has(playlistName.toLowerCase())) {
+          console.log(`Playlist "${playlistName}" already exists on YouTube. Skipping.`);
+          skippedCount++;
+          continue;
+        }
+
+        try {
+          // 5. Create the playlist on YouTube
+          await this.youtube.createPlaylist(playlistName, playlistDescription);
+          createdCount++;
+          this.toast.show(`Created playlist: "${playlistName}"`, ErrorSeverity.INFO, 2000);
+        } catch (error) {
+          console.error(`Failed to create playlist "${playlistName}" on YouTube:`, error);
+          this.toast.show(`Error creating playlist: "${playlistName}"`, ErrorSeverity.ERROR, 3000);
+        }
+      }
+
+      this.toast.show(
+        `Transfer complete! Created: ${createdCount}, Skipped: ${skippedCount}`,
+        ErrorSeverity.INFO,
+        5000
+      );
+
+      // Refresh the list of Google playlists in the UI after transfer
+      await this.connectGoogle();
+
+    } catch (error) {
+      console.error('An error occurred during the transfer process:', error);
+      this.toast.show('Playlist transfer failed. Please try again.', ErrorSeverity.ERROR, 5000);
+    } finally {
+      this.connecting.set(false);
+    }
   }
+
+  async transferSongsToYouTubePlaylists() {
+    this.connecting.set(true);
+    this.toast.show('Starting song transfer...', ErrorSeverity.INFO, 10000);
+  
+    try {
+      const spotifyPlaylists = this.spotifyPlaylists();
+      const googlePlaylists = this.googlePlaylists();
+  
+      if (!spotifyPlaylists || spotifyPlaylists.length === 0) {
+        this.toast.show('No Spotify playlists loaded.', ErrorSeverity.WARNING, 3000);
+        return;
+      }
+      if (!googlePlaylists || googlePlaylists.length === 0) {
+        this.toast.show('No YouTube playlists loaded.', ErrorSeverity.WARNING, 3000);
+        return;
+      }
+  
+      // Ensure all spotify tracks are loaded
+      if (spotifyPlaylists.some(p => !p.videos || p.videos.length === 0)) {
+          await this.loadAllSpotifyData();
+      }
+      const freshSpotifyPlaylists = this.spotifyPlaylists();
+  
+  
+      const youtubePlaylistsMap = new Map(googlePlaylists.map(p => [p.title.toLowerCase(), p]));
+  
+      for (const spotifyPlaylist of freshSpotifyPlaylists) {
+        const targetPlaylist = youtubePlaylistsMap.get(spotifyPlaylist.title.toLowerCase());
+  
+        if (!targetPlaylist) {
+          this.toast.show(`YouTube playlist "${spotifyPlaylist.title}" not found. Skipping.`, ErrorSeverity.WARNING, 3000);
+          continue;
+        }
+  
+        this.toast.show(`Transferring songs to "${targetPlaylist.title}"...`, ErrorSeverity.INFO, 5000);
+  
+        // Fetch existing videos for the target YouTube playlist
+        const [youtubePlaylistWithVideos] = await this.playlistSvc.fetchAllPlaylistItems([targetPlaylist]);
+        const existingVideoTitles = new Set(youtubePlaylistWithVideos.videos.map(v => v.title.toLowerCase()));
+  
+        for (const spotifyTrack of spotifyPlaylist.videos) {
+          const searchQuery = spotifyTrack.title; // Already "Song - Artist"
+  
+          // Fuzzy check if song already exists
+          let exists = false;
+          for (const existingTitle of existingVideoTitles) {
+              // This is a very basic fuzzy match.
+              if (existingTitle.includes(spotifyTrack.title.split('-')[0].trim().toLowerCase())) {
+                  exists = true;
+                  break;
+              }
+          }
+  
+          if (exists) {
+            console.log(`Song "${searchQuery}" seems to already exist in "${targetPlaylist.title}". Skipping.`);
+            continue;
+          }
+  
+          try {
+            const searchResults = await this.youtube.searchMusicVideos(searchQuery, 1);
+            if (searchResults && searchResults.items && searchResults.items.length > 0) {
+              const videoId = searchResults.items[0].id.videoId;
+              await this.youtube.addVideoToPlaylist(targetPlaylist.id, videoId);
+              this.toast.show(`Added "${searchQuery}" to "${targetPlaylist.title}"`, ErrorSeverity.INFO, 2000);
+              // Add to local list to avoid re-adding in the same run
+              existingVideoTitles.add(searchQuery.toLowerCase());
+            } else {
+              this.toast.show(`No YouTube video found for "${searchQuery}"`, ErrorSeverity.WARNING, 2000);
+            }
+          } catch (error) {
+            console.error(`Failed to search or add video for "${searchQuery}"`, error);
+            this.toast.show(`Error processing "${searchQuery}"`, ErrorSeverity.ERROR, 3000);
+          }
+        }
+      }
+  
+      this.toast.show('Song transfer complete!', ErrorSeverity.INFO, 5000);
+    } catch (error) {
+      console.error('An error occurred during song transfer:', error);
+      this.toast.show('Song transfer failed.', ErrorSeverity.ERROR, 5000);
+    } finally {
+      this.connecting.set(false);
+    }
+  }
+
+  async transferSinglePlaylistSongs(spotifyPlaylist: PlaylistColumn) {
+    this.connecting.set(true);
+    this.toast.show(`Transferring songs from "${spotifyPlaylist.title}"...`, ErrorSeverity.INFO, 10000);
+  
+    try {
+      const googlePlaylists = this.googlePlaylists();
+      if (!googlePlaylists || googlePlaylists.length === 0) {
+        this.toast.show('No YouTube playlists loaded.', ErrorSeverity.WARNING, 3000);
+        return;
+      }
+  
+      const youtubePlaylistsMap = new Map(googlePlaylists.map(p => [p.title.toLowerCase(), p]));
+      const targetPlaylist = youtubePlaylistsMap.get(spotifyPlaylist.title.toLowerCase());
+  
+      if (!targetPlaylist) {
+        this.toast.show(`YouTube playlist "${spotifyPlaylist.title}" not found. Skipping.`, ErrorSeverity.WARNING, 3000);
+        return;
+      }
+  
+      // Ensure spotify tracks are loaded for this playlist
+      if (!spotifyPlaylist.videos || spotifyPlaylist.videos.length === 0) {
+          await this.loadVideosForPlaylist(spotifyPlaylist.id);
+          // need to get the updated playlist from the signal
+          const updatedSpotifyPlaylist = this.spotifyPlaylists().find(p => p.id === spotifyPlaylist.id);
+          if (!updatedSpotifyPlaylist || !updatedSpotifyPlaylist.videos || updatedSpotifyPlaylist.videos.length === 0) {
+              this.toast.show(`Could not load songs for "${spotifyPlaylist.title}".`, ErrorSeverity.ERROR, 3000);
+              return;
+          }
+          spotifyPlaylist = updatedSpotifyPlaylist;
+      }
+  
+  
+      this.toast.show(`Transferring songs to "${targetPlaylist.title}"...`, ErrorSeverity.INFO, 5000);
+  
+      const [youtubePlaylistWithVideos] = await this.playlistSvc.fetchAllPlaylistItems([targetPlaylist]);
+      const existingVideoTitles = new Set(youtubePlaylistWithVideos.videos.map(v => v.title.toLowerCase()));
+  
+      for (const spotifyTrack of spotifyPlaylist.videos) {
+        const searchQuery = spotifyTrack.title;
+  
+        let exists = false;
+        for (const existingTitle of existingVideoTitles) {
+            if (existingTitle.includes(spotifyTrack.title.split('-')[0].trim().toLowerCase())) {
+                exists = true;
+                break;
+            }
+        }
+  
+        if (exists) {
+          console.log(`Song "${searchQuery}" seems to already exist in "${targetPlaylist.title}". Skipping.`);
+          continue;
+        }
+  
+        try {
+          const searchResults = await this.youtube.searchMusicVideos(searchQuery, 1);
+          if (searchResults && searchResults.items && searchResults.items.length > 0) {
+            const videoId = searchResults.items[0].id.videoId;
+            await this.youtube.addVideoToPlaylist(targetPlaylist.id, videoId);
+            this.toast.show(`Added "${searchQuery}" to "${targetPlaylist.title}"`, ErrorSeverity.INFO, 2000);
+            existingVideoTitles.add(searchQuery.toLowerCase());
+          } else {
+            this.toast.show(`No YouTube video found for "${searchQuery}"`, ErrorSeverity.WARNING, 2000);
+          }
+        } catch (error) {
+          console.error(`Failed to search or add video for "${searchQuery}"`, error);
+          this.toast.show(`Error processing "${searchQuery}"`, ErrorSeverity.ERROR, 3000);
+        }
+      }
+  
+      this.toast.show(`Finished transferring songs for "${spotifyPlaylist.title}"!`, ErrorSeverity.INFO, 5000);
+    } catch (error) {
+      console.error(`An error occurred during song transfer for "${spotifyPlaylist.title}":`, error);
+      this.toast.show('Song transfer failed.', ErrorSeverity.ERROR, 5000);
+    } finally {
+      this.connecting.set(false);
+    }
+  }
+
 
 
   // Proxy to ThemeService so the template can toggle and read dark mode
@@ -513,5 +744,31 @@ export class TransferComponent implements OnInit {
   // Accept `any` so it can be used for playlists and videos (different shapes)
   trackById(index: number, item: any): any {
     return item?.id;
+  }
+
+  getYouTubePlaylistUrl(playlistId: string): string {
+    return `https://www.youtube.com/playlist?list=${playlistId}`;
+  }
+
+  getSongColor(video: VideoCard, googlePlaylist: PlaylistColumn): string {
+    const spotifyPlaylists = this.spotifyPlaylists();
+    const correspondingSpotifyPlaylist = spotifyPlaylists.find(p => p.title.toLowerCase() === googlePlaylist.title.toLowerCase());
+
+    if (!correspondingSpotifyPlaylist || !correspondingSpotifyPlaylist.videos || correspondingSpotifyPlaylist.videos.length === 0) {
+        return 'red';
+    }
+
+    const spotifyTrackTitles = new Set(correspondingSpotifyPlaylist.videos.map(v => v.title.toLowerCase()));
+
+    let exists = false;
+    const googleVideoTitle = video.title.toLowerCase();
+    for (const spotifyTitle of spotifyTrackTitles) {
+        if (spotifyTitle.includes(googleVideoTitle.split('-')[0].trim()) || googleVideoTitle.includes(spotifyTitle.split('-')[0].trim())) {
+            exists = true;
+            break;
+        }
+    }
+
+    return exists ? 'black' : 'red';
   }
 }

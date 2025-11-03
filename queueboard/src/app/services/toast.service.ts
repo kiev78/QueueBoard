@@ -11,9 +11,7 @@ export interface ToastMessage {
 @Injectable({ providedIn: 'root' })
 export class ToastService {
   private _toasts = signal<ToastMessage[]>([]);
-  toasts() {
-    return this._toasts();
-  }
+  public readonly toasts = this._toasts.asReadonly();
 
   show(message: string, severity: ErrorSeverity = ErrorSeverity.ERROR, durationMs: number = 4000) {
     if (!message) return;

@@ -2,8 +2,12 @@
   <!-- Top banner header -->
   <nav class="navbar navbar-expand-lg transfer-navbar" [class.dark]="isDarkMode()">
     <div class="container-fluid">
-      <span class="navbar-brand">Queue Board — Transfer</span>
+      <span class="navbar-brand">Queueboard Transfer </span>
       <div class="ms-auto d-flex gap-2 align-items-center">
+      <a routerLink="/organizer" class="btn btn-outline-light">
+        Organizer
+      </a>
+
         <!-- Dark mode toggle -->
         <button
           class="btn btn-outline-light"
@@ -20,11 +24,11 @@
         <button
           class="btn btn-outline-light"
           (click)="connectGoogle()"
-          [disabled]="connecting() || trans_google()"
+          [disabled]="connecting() || authenticated()"
         >
           @if (connecting()) {
             <span>Connecting…</span>
-          } @else if (trans_google()) {
+          } @else if (authenticated()) {
             <span>Connected</span>
           } @else {
             <span>Connect Google</span>
@@ -55,11 +59,11 @@
         <button
           class="btn btn-primary"
           (click)="connectGoogle()"
-          [disabled]="connecting() || trans_google()"
+          [disabled]="connecting()"
         >
           @if (connecting()) {
             <span>Connecting…</span>
-          } @else if (trans_google()) {
+          } @else if (authenticated()) {
             <span>Re-connect Google</span>
           } @else {
             <span>Connect Google</span>
@@ -123,9 +127,10 @@
                   [class.list-group-item-dark]="isDarkMode()"
                 >
                   <div class="d-flex justify-content-between align-items-center w-100">
-                    <div class="d-flex gap-2 align-items-baseline">
+                    <div class="d-flex gap-2 align-items-center">
                       <span class="playlist-number text-muted small">{{ pIndex + 1 }}.</span>
                       <div class="playlist-title">{{ playlist.title }}</div>
+                      <a [href]="getYouTubePlaylistUrl(playlist.id)" target="_blank" title="Open on YouTube" class="small ms-1">↗️</a>
                     </div>
                     <button
                       class="btn btn-sm btn-outline-primary"
@@ -146,6 +151,7 @@
                       <li
                         class="small"
                         *ngFor="let v of playlist.videos; let i = index; trackBy: trackById"
+                        [style.color]="getSongColor(v, playlist)"
                       >
                         <span class="video-index">{{ i + 1 }}.</span>
                         <span class="video-title">{{ v.title }}</span>
@@ -192,17 +198,28 @@
                       <div class="playlist-title">{{ playlist.title }}</div>
                       <span class="badge bg-success small">Spotify</span>
                     </div>
-                    <button
-                      class="btn btn-sm btn-outline-success"
-                      type="button"
-                      (click)="loadVideosForPlaylist(playlist.id)"
-                      [disabled]="loadingVideos()[playlist.id]"
-                    >
-                      <ng-container *ngIf="!loadingVideos()[playlist.id]">
-                        {{ expandedPlaylists()[playlist.id] ? 'Hide' : 'Load songs' }}
-                      </ng-container>
-                      <ng-container *ngIf="loadingVideos()[playlist.id]">Loading…</ng-container>
-                    </button>
+                    <div class="btn-group">
+                        <button
+                          class="btn btn-sm btn-outline-success"
+                          type="button"
+                          (click)="loadVideosForPlaylist(playlist.id)"
+                          [disabled]="loadingVideos()[playlist.id]"
+                        >
+                          <ng-container *ngIf="!loadingVideos()[playlist.id]">
+                            {{ expandedPlaylists()[playlist.id] ? 'Hide' : 'Load songs' }}
+                          </ng-container>
+                          <ng-container *ngIf="loadingVideos()[playlist.id]">Loading…</ng-container>
+                        </button>
+                        <button
+                          class="btn btn-sm btn-outline-primary"
+                          type="button"
+                          (click)="transferSinglePlaylistSongs(playlist)"
+                          [disabled]="connecting() || !authenticated()"
+                          title="Transfer songs to YouTube"
+                        >
+                          Transfer
+                        </button>
+                    </div>
                   </div>
 
                   <!-- Only render the numeric list when the playlist is expanded -->
@@ -227,7 +244,10 @@
  
     <div class="transfer-button-container">
       <button class="btn btn-primary" [disabled]="!trans_google() || !trans_spotify()" (click)="performTransfer()">
-        Transfer
+        Transfer Playlists
+      </button>
+      <button class="btn btn-secondary" [disabled]="!trans_google() || !trans_spotify()" (click)="transferSongsToYouTubePlaylists()">
+        Transfer Songs
       </button>
     </div>
   </div>
