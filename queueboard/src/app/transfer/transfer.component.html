@@ -24,11 +24,11 @@
         <button
           class="btn btn-outline-light"
           (click)="connectGoogle()"
-          [disabled]="connecting() || authenticated()"
+          [disabled]="connecting() || google_authenticated()"
         >
           @if (connecting()) {
             <span>Connecting…</span>
-          } @else if (authenticated()) {
+          } @else if (google_authenticated()) {
             <span>Connected</span>
           } @else {
             <span>Connect Google</span>
@@ -63,7 +63,7 @@
         >
           @if (connecting()) {
             <span>Connecting…</span>
-          } @else if (authenticated()) {
+          } @else if (google_authenticated()) {
             <span>Re-connect Google</span>
           } @else {
             <span>Connect Google</span>
@@ -72,13 +72,13 @@
         <button class="btn btn-success" (click)="connectSpotify()" [disabled]="connecting()">
           @if (connecting()) {
             <span>Connecting…</span>
-          } @else if (trans_spotify()) {
+          } @else if (spotify_authenticated()) {
             <span>Re-connect Spotify</span>
           } @else {
             <span>Connect Spotify</span>
           }
         </button>
-        @if (trans_spotify()) {
+        @if (spotify_authenticated()) {
           <button
             class="btn btn-outline-success"
             (click)="loadAllSpotifyData()"
@@ -151,10 +151,10 @@
                       <li
                         class="small"
                         *ngFor="let v of playlist.videos; let i = index; trackBy: trackById"
-                        [style.color]="getSongColor(v, playlist)"
+                        [ngClass]="{'song-matched': v.matched, 'song-unmatched': v.matched === false}"
                       >
                         <span class="video-index">{{ i + 1 }}.</span>
-                        <span class="video-title">{{ v.title }}</span>
+                        <span class="video-title">{{ v.title }} - {{v.matched}}</span>
                       </li>
                     </ol>
                   </ng-container>
@@ -214,7 +214,7 @@
                           class="btn btn-sm btn-outline-primary"
                           type="button"
                           (click)="transferSinglePlaylistSongs(playlist)"
-                          [disabled]="connecting() || !authenticated()"
+                          [disabled]="connecting() || !google_authenticated()"
                           title="Transfer songs to YouTube"
                         >
                           Transfer
@@ -228,9 +228,10 @@
                       <li
                         class="small"
                         *ngFor="let v of playlist.videos; let i = index; trackBy: trackById"
+                        [ngClass]="{'song-matched': v.matched, 'song-unmatched': v.matched === false}"
                       >
                         <span class="video-index">{{ i + 1 }}.</span>
-                        <span class="video-title">{{ v.title }}</span>
+                        <span class="video-title">{{ v.title }} - {{v.matched}}</span>
                       </li>
                     </ol>
                   </ng-container>

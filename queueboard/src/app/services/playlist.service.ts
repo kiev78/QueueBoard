@@ -22,6 +22,7 @@ export interface VideoCard extends VideoCardDB {
   isMinimized?: boolean;
   resumeTime?: number;
   isTemp?: boolean;
+  matched?: boolean;
 }
 
 export interface PlaylistColumnDB {

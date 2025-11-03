@@ -62,8 +62,14 @@ export class ErrorHandlerService {
       switch (apiError.code) {
         case 401:
         case 403:
-          message = 'Authentication failed. Please sign in again.';
-          severity = ErrorSeverity.WARNING;
+          if (apiError.code === 403 && apiError.reason === 'quotaExceeded') {
+            message =
+              'YouTube API daily quota exceeded. Please try again tomorrow.';
+            severity = ErrorSeverity.WARNING;
+          } else {
+            message = 'Authentication failed or permission denied. Please sign in again.';
+            severity = ErrorSeverity.WARNING;
+          }
           break;
         case 404:
           message = 'The requested resource was not found.';
@@ -97,7 +103,12 @@ export class ErrorHandlerService {
   /**
    * Normalizes any error type to a standard format
    */
-  private normalizeError(error: unknown): { message: string; stack?: string; code?: number } {
+  private normalizeError(error: unknown): {
+    message: string;
+    stack?: string;
+    code?: number;
+    reason?: string;
+  } {
     if (error instanceof Error) {
       return {
         message: error.message || 'An error occurred',
@@ -114,6 +125,7 @@ export class ErrorHandlerService {
       return {
         message: obj.message || obj.error || obj.statusText || 'Unknown error',
         code: obj.status || obj.code,
+        reason: obj.reason,
       };
     }
 
@@ -123,15 +135,20 @@ export class ErrorHandlerService {
   /**
    * Extracts API error information from gapi response
    */
-  private extractApiError(error: unknown): { code: number; message: string } | null {
+  private extractApiError(error: unknown): { code: number; message: string; reason?: string } | null {
     try {
       const err = error as any;
 
       // gapi error structure
       if (err.result?.error) {
+        const apiErr = err.result.error;
+        const reason =
+          apiErr.errors && apiErr.errors.length > 0 ? apiErr.errors[0].reason : undefined;
+
         return {
-          code: err.result.error.code || err.status || 500,
-          message: err.result.error.message || 'Unknown API error',
+          code: apiErr.code || err.status || 500,
+          message: apiErr.message || 'Unknown API error',
+          reason: reason,
         };
       }
 
@@ -152,7 +169,11 @@ export class ErrorHandlerService {
   /**
    * Determines error severity based on error type
    */
-  private determineSeverity(error: { message: string; code?: number }): ErrorSeverity {
+  private determineSeverity(error: {
+    message: string;
+    code?: number;
+    reason?: string;
+  }): ErrorSeverity {
     if (!error.code) {
       return ErrorSeverity.ERROR;
     }

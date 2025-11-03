@@ -116,3 +116,15 @@
 body.dark-mode .playlist-video-list li {
   --video-border: rgba(255,255,255,0.08);
 }
+
+.song-unmatched {
+  color: red !important;
+}
+
+.song-matched {
+  color:grey !important;
+}
+
+.dark .song-matched {
+    color:grey !important;
+}
