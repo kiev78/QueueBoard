@@ -95,7 +95,7 @@
       </div>
     </div>
 
-    <div class="container-fluid">
+    <div class="container-fluid" cdkDropListGroup>
       <div class="row">
         <div class="col-lg-6">
           @if (trans_google()) {
@@ -130,6 +130,9 @@
                     <div class="d-flex gap-2 align-items-center">
                       <span class="playlist-number text-muted small">{{ pIndex + 1 }}.</span>
                       <div class="playlist-title">{{ playlist.title }}</div>
+                      @if(playlist.videos && playlist.videos.length > 0) {
+                        <span class="badge bg-secondary rounded-pill">{{ playlist.videos.length }}</span>
+                      }
                       <a [href]="getYouTubePlaylistUrl(playlist.id)" target="_blank" title="Open on YouTube" class="small ms-1">↗️</a>
                     </div>
                     <button
@@ -146,18 +149,39 @@
                   </div>
 
                   <!-- Only render the numeric list when the playlist is expanded -->
-                  <ng-container *ngIf="expandedPlaylists()[playlist.id]">
-                    <ol class="mt-2 playlist-video-list">
+                  @if (expandedPlaylists()[playlist.id]) {
+                    <ol
+                      class="mt-2 playlist-video-list"
+                      cdkDropList
+                      [id]="playlist.id"
+                      [cdkDropListData]="playlist.videos"
+                      (cdkDropListDropped)="dropSong($event)"
+                    >
                       <li
                         class="small"
-                        *ngFor="let v of playlist.videos; let i = index; trackBy: trackById"
+                        *ngFor="let v of playlist.videos; let i = index; trackBy: trackById"                        
+                        cdkDrag
                         [ngClass]="{'song-matched': v.matched, 'song-unmatched': v.matched === false}"
                       >
-                        <span class="video-index">{{ i + 1 }}.</span>
-                        <span class="video-title">{{ v.title }} - {{v.matched}}</span>
+                        <div class="d-flex align-items-center gap-2">
+                         <span class="drag-handle" cdkDragHandle title="Drag to transfer">⠿</span>
+                         <span class="video-index">{{ i + 1 }}.</span>
+                         @if (v.thumbnail) {
+                         <img [src]="v.thumbnail" alt="Thumbnail" class="song-thumbnail" crossorigin="anonymous">
+                         }
+                         <div class="song-info flex-grow-1">
+                         <div class="video-title">{{ v.title }}</div>
+                         @if (v.channelTitle) {
+                         <div class="video-artist">{{ v.channelTitle }}</div>
+                         }
+                         @if (v.duration) {
+                         <div class="video-duration">{{ v.duration }}</div>
+                         }
+                         </div>
+                        </div>
                       </li>
                     </ol>
-                  </ng-container>
+                  }
                 </li>
               </ul>
             </div>
@@ -196,6 +220,9 @@
                     <div class="d-flex gap-2 align-items-baseline">
                       <span class="playlist-number text-muted small">{{ pIndex + 1 }}.</span>
                       <div class="playlist-title">{{ playlist.title }}</div>
+                      @if(playlist.videos && playlist.videos.length > 0) {
+                        <span class="badge bg-secondary rounded-pill">{{ playlist.videos.length }}</span>
+                      }
                       <span class="badge bg-success small">Spotify</span>
                     </div>
                     <div class="btn-group">
@@ -223,18 +250,39 @@
                   </div>
 
                   <!-- Only render the numeric list when the playlist is expanded -->
-                  <ng-container *ngIf="expandedPlaylists()[playlist.id]">
-                    <ol class="mt-2 playlist-video-list">
+                  @if (expandedPlaylists()[playlist.id]) {
+                    <ol
+                      class="mt-2 playlist-video-list"
+                      cdkDropList
+                      [id]="playlist.id"
+                      [cdkDropListData]="playlist.videos"
+                      (cdkDropListDropped)="dropSong($event)"
+                    >
                       <li
                         class="small"
-                        *ngFor="let v of playlist.videos; let i = index; trackBy: trackById"
+                        *ngFor="let v of playlist.videos; let i = index; trackBy: trackById"                        
+                        cdkDrag
                         [ngClass]="{'song-matched': v.matched, 'song-unmatched': v.matched === false}"
                       >
-                        <span class="video-index">{{ i + 1 }}.</span>
-                        <span class="video-title">{{ v.title }} - {{v.matched}}</span>
+                        <div class="d-flex align-items-center gap-2">
+                         <span class="drag-handle" cdkDragHandle title="Drag to transfer">⠿</span>
+                         <span class="video-index">{{ i + 1 }}.</span>
+                         @if (v.thumbnail) {
+                         <img [src]="v.thumbnail" alt="Thumbnail" class="song-thumbnail" crossorigin="anonymous">
+                         }
+                         <div class="song-info flex-grow-1">
+                         <div class="video-title">{{ v.title }}</div>
+                         @if (v.channelTitle) {
+                         <div class="video-artist">{{ v.channelTitle }}</div>
+                         }
+                         @if (v.duration) {
+                         <div class="video-duration">{{ v.duration }}</div>
+                         }
+                         </div>
+                        </div>
                       </li>
                     </ol>
-                  </ng-container>
+                  }
                 </li>
               </ul>
             </div>

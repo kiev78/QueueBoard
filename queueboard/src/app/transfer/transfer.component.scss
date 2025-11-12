@@ -117,6 +117,10 @@ body.dark-mode .playlist-video-list li {
   --video-border: rgba(255,255,255,0.08);
 }
 
+.song-thumbnail {
+  width: 32px;
+  height: 32px;
+}
 .song-unmatched {
   color: red !important;
 }
@@ -127,4 +131,15 @@ body.dark-mode .playlist-video-list li {
 
 .dark .song-matched {
     color:grey !important;
+}
+
+.video-artist {
+  font-size: 0.8em;
+  color: var(--color-secondary-text);
+}
+
+.video-duration {
+  font-size: 0.8em;
+  color: var(--color-secondary-text);
+  margin-top: 0.2em;
 }

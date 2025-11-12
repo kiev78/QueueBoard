@@ -1,22 +1,27 @@
 import { Component, inject, signal, OnInit, computed } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { PLATFORM_ID } from '@angular/core';
+import {  CdkDragDrop,  DragDropModule,  moveItemInArray, CdkDragHandle,
+  transferArrayItem,
+} from '@angular/cdk/drag-drop';
 import { FormsModule } from '@angular/forms';
 import { YoutubeApiService } from '../services/youtube-api.service';
 import { YouTubeSearchResult } from '../services/youtube-api.types';
 import { SpotifyApiService, SpotifyPlaylist } from '../services/spotify-api.service';
 import { StorageService } from '../services/StorageService';
+import { RouterModule } from '@angular/router';
 import { IndexedDbService } from '../services/indexed-db.service';
 import { PlaylistColumn, VideoCard } from '../services/playlist.service';
 import { PlaylistService } from '../services/playlist.service';
 import { ThemeService } from '../services/theme.service';
 import { ToastService } from '../services/toast.service';
-import { ErrorSeverity } from '../services/ErrorHandlerService';
+import { ErrorHandlerService, ErrorSeverity } from '../services/ErrorHandlerService';
+import { PlayerManagerService } from '../services/PlayerManagerService';
 
 @Component({
   selector: 'app-transfer',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, DragDropModule, CdkDragHandle, RouterModule],
   templateUrl: './transfer.component.html',
   styleUrls: ['./transfer.component.scss'],
 })
@@ -28,6 +33,8 @@ export class TransferComponent implements OnInit {
   private playlistSvc = inject(PlaylistService);
   private theme = inject(ThemeService);
   private toast = inject(ToastService);
+  private errorHandler = inject(ErrorHandlerService);
+  private playerManager = inject(PlayerManagerService);
   private platformId = inject(PLATFORM_ID);
 
   connecting = signal(false);
@@ -140,8 +147,8 @@ export class TransferComponent implements OnInit {
         }
 
       } catch (e) {
-        console.warn('Silent playlist fetch failed', e);
-        this.toast.show('Could not silently load playlists', ErrorSeverity.WARNING, 3000);
+        const appErr = this.errorHandler.handleYouTubeError(e, 'ngOnInit.silentFetch');
+        this.toast.show(appErr.message, appErr.severity);
       }
 
     })();
@@ -183,8 +190,8 @@ export class TransferComponent implements OnInit {
         this.toast.show('No saved playlists found', ErrorSeverity.WARNING, 2500);
       }
     } catch (err) {
-      console.error('Failed to load saved playlists', err);
-      this.toast.show('Failed to load saved playlists', ErrorSeverity.ERROR, 4000);
+      const appErr = this.errorHandler.handleError(err, 'loadSavedPlaylists');
+      this.toast.show(appErr.message, appErr.severity);
     } finally {
       this.connecting.set(false);
     }
@@ -217,7 +224,8 @@ export class TransferComponent implements OnInit {
         this.trans_google.set(true);
       }
     } catch (error) {
-      console.error('Failed to connect to Google', error);
+      const appErr = this.errorHandler.handleYouTubeError(error, 'connectGoogle');
+      this.toast.show(appErr.message, appErr.severity);
     } finally {
       this.connecting.set(false);
     }
@@ -284,8 +292,8 @@ export class TransferComponent implements OnInit {
         4000,
       );
     } catch (error) {
-      console.error('Failed to connect to Spotify:', error);
-      this.toast.show(`Failed to connect to Spotify: ${error}`, ErrorSeverity.ERROR, 5000);
+      const appErr = this.errorHandler.handleError(error, 'connectSpotify');
+      this.toast.show(appErr.message, appErr.severity);
     } finally {
       this.connecting.set(false);
     }
@@ -368,8 +376,8 @@ export class TransferComponent implements OnInit {
         5000,
       );
     } catch (error) {
-      console.error('Failed to load all Spotify data:', error);
-      this.toast.show(`Failed to load all Spotify data: ${error}`, ErrorSeverity.ERROR, 5000);
+      const appErr = this.errorHandler.handleError(error, 'loadAllSpotifyData');
+      this.toast.show(appErr.message, appErr.severity);
     } finally {
       this.connecting.set(false);
     }
@@ -464,6 +472,11 @@ export class TransferComponent implements OnInit {
         this.toast.show(`Loaded ${convertedVideos.length} tracks`, ErrorSeverity.INFO, 2000);
       } else {
         // For Google, fetch videos via YouTube API
+        if (!this.youtube.isAuthenticated()) {
+          this.toast.show('Please connect to Google first.', ErrorSeverity.WARNING, 3000);
+          return;
+        }
+
         const updated = await this.playlistSvc.fetchAllPlaylistItems([playlist]);
         if (updated && updated.length > 0) {
           playlistArray[idx] = updated[0];
@@ -492,18 +505,19 @@ export class TransferComponent implements OnInit {
               googlePlaylist = this.googlePlaylists().find(p => p.title.toLowerCase() === spotifyPlaylist!.title.toLowerCase());
             }
 
-                    if (googlePlaylist && spotifyPlaylist && googlePlaylist.videos?.length > 0 && spotifyPlaylist.videos?.length > 0) {
-                        this.calculateMatches(googlePlaylist, spotifyPlaylist);
-                        await this.storage.savePlaylists(this.googlePlaylists(), 'google');
-                        await this.storage.savePlaylists(this.spotifyPlaylists(), 'spotify');
-                    }          }
+            if (googlePlaylist && spotifyPlaylist && googlePlaylist.videos?.length > 0 && spotifyPlaylist.videos?.length > 0) {
+              this.calculateMatches(googlePlaylist, spotifyPlaylist);
+              await this.storage.savePlaylists(this.googlePlaylists(), 'google');
+              await this.storage.savePlaylists(this.spotifyPlaylists(), 'spotify');
+            }
+          }
         } else {
           this.toast.show('No videos found for playlist', ErrorSeverity.WARNING, 2500);
         }
       }
     } catch (err) {
-      console.error(`Failed to load ${itemType} for playlist`, playlistId, err);
-      this.toast.show(`Failed to load ${itemType}`, ErrorSeverity.ERROR, 4000);
+      const appErr = this.errorHandler.handleError(err, `loadVideosForPlaylist:${service}`);
+      this.toast.show(appErr.message, appErr.severity);
     } finally {
       this.loadingVideos.update((m) => ({ ...(m || {}), [playlistId]: false }));
     }
@@ -568,8 +582,8 @@ export class TransferComponent implements OnInit {
           createdCount++;
           this.toast.show(`Created playlist: "${playlistName}"`, ErrorSeverity.INFO, 2000);
         } catch (error) {
-          console.error(`Failed to create playlist "${playlistName}" on YouTube:`, error);
-          this.toast.show(`Error creating playlist: "${playlistName}"`, ErrorSeverity.ERROR, 3000);
+          const appErr = this.errorHandler.handleYouTubeError(error, 'performTransfer.create');
+          this.toast.show(`Error for "${playlistName}": ${appErr.message}`, appErr.severity);
         }
       }
 
@@ -583,110 +597,92 @@ export class TransferComponent implements OnInit {
       await this.connectGoogle();
 
     } catch (error) {
-      console.error('An error occurred during the transfer process:', error);
-      this.toast.show('Playlist transfer failed. Please try again.', ErrorSeverity.ERROR, 5000);
+      const appErr = this.errorHandler.handleError(error, 'performTransfer');
+      this.toast.show(appErr.message, appErr.severity);
     } finally {
       this.connecting.set(false);
     }
   }
 
+  /**
+   * Transfers all songs from all loaded Spotify playlists to matching YouTube playlists.
+   */
   async transferSongsToYouTubePlaylists() {
     this.connecting.set(true);
     this.toast.show('Starting song transfer...', ErrorSeverity.INFO, 10000);
 
     try {
-      const spotifyPlaylists = this.spotifyPlaylists();
       const googlePlaylists = this.googlePlaylists();
 
-      if (!spotifyPlaylists || spotifyPlaylists.length === 0) {
+      // Ensure all spotify tracks are loaded before starting the bulk transfer
+      if (this.spotifyPlaylists().some((p) => !p.videos || p.videos.length === 0)) {
+        await this.loadAllSpotifyData();
+      }
+      const spotifyPlaylists = this.spotifyPlaylists(); // Get the fresh list with all tracks
+
+      if (!spotifyPlaylists.length) {
         this.toast.show('No Spotify playlists loaded.', ErrorSeverity.WARNING, 3000);
         return;
       }
-      if (!googlePlaylists || googlePlaylists.length === 0) {
+      if (!googlePlaylists.length) {
         this.toast.show('No YouTube playlists loaded.', ErrorSeverity.WARNING, 3000);
         return;
       }
 
-      // Ensure all spotify tracks are loaded
-      if (spotifyPlaylists.some(p => !p.videos || p.videos.length === 0)) {
-        await this.loadAllSpotifyData();
-      }
-      const freshSpotifyPlaylists = this.spotifyPlaylists();
+      const youtubePlaylistsMap = new Map(googlePlaylists.map((p) => [p.title.toLowerCase(), p]));
 
-
-      const youtubePlaylistsMap = new Map(googlePlaylists.map(p => [p.title.toLowerCase(), p]));
-
-      for (const spotifyPlaylist of freshSpotifyPlaylists) {
-        const targetPlaylist = youtubePlaylistsMap.get(spotifyPlaylist.title.toLowerCase());
-
-        if (!targetPlaylist) {
-          this.toast.show(`YouTube playlist "${spotifyPlaylist.title}" not found. Skipping.`, ErrorSeverity.WARNING, 3000);
-          continue;
-        }
-
-        this.toast.show(`Transferring songs to "${targetPlaylist.title}"...`, ErrorSeverity.INFO, 5000);
-
-        // Fetch existing videos for the target YouTube playlist
-        const [youtubePlaylistWithVideos] = await this.playlistSvc.fetchAllPlaylistItems([targetPlaylist]);
-        const existingVideoTitles = new Set(youtubePlaylistWithVideos.videos.map(v => v.title.toLowerCase()));
-
-        for (const spotifyTrack of spotifyPlaylist.videos) {
-          const searchQuery = spotifyTrack.title; // Already "Song - Artist"
-
-          // Fuzzy check if song already exists
-          let exists = false;
-          for (const existingTitle of existingVideoTitles) {
-            // This is a very basic fuzzy match.
-            if (existingTitle.includes(spotifyTrack.title.split('-')[0].trim().toLowerCase())) {
-              exists = true;
-              break;
-            }
-          }
-
-          if (exists) {
-            console.log(`Song "${searchQuery}" seems to already exist in "${targetPlaylist.title}". Skipping.`);
-            continue;
-          }
-
-          try {
-            const searchResults = await this.youtube.searchMusicVideos(searchQuery, 1);
-            if (searchResults && searchResults.items && searchResults.items.length > 0) {
-              const videoId = searchResults.items[0].id.videoId;
-              await this.youtube.addVideoToPlaylist(targetPlaylist.id, videoId);
-              this.toast.show(`Added "${searchQuery}" to "${targetPlaylist.title}"`, ErrorSeverity.INFO, 2000);
-              // Add to local list to avoid re-adding in the same run
-              existingVideoTitles.add(searchQuery.toLowerCase());
-            } else {
-              this.toast.show(`No YouTube video found for "${searchQuery}"`, ErrorSeverity.WARNING, 2000);
-            }
-          } catch (error) {
-            console.error(`Failed to search or add video for "${searchQuery}"`, error);
-            this.toast.show(`Error processing "${searchQuery}"`, ErrorSeverity.ERROR, 3000);
-          }
-        }
+      for (const spotifyPlaylist of spotifyPlaylists) {
+        await this._transferSongsForPlaylist(spotifyPlaylist, youtubePlaylistsMap);
       }
 
       this.toast.show('Song transfer complete!', ErrorSeverity.INFO, 5000);
     } catch (error) {
-      console.error('An error occurred during song transfer:', error);
-      this.toast.show('Song transfer failed.', ErrorSeverity.ERROR, 5000);
+      const appErr = this.errorHandler.handleError(error, 'transferSongsToYouTubePlaylists');
+      this.toast.show(appErr.message, appErr.severity);
     } finally {
       this.connecting.set(false);
     }
   }
 
+  /**
+   * Transfers songs from a single Spotify playlist to its matching YouTube playlist.
+   * @param spotifyPlaylist The specific Spotify playlist to transfer songs from.
+   */
   async transferSinglePlaylistSongs(spotifyPlaylist: PlaylistColumn) {
     this.connecting.set(true);
     this.toast.show(`Transferring songs from "${spotifyPlaylist.title}"...`, ErrorSeverity.INFO, 10000);
 
     try {
       const googlePlaylists = this.googlePlaylists();
-      if (!googlePlaylists || googlePlaylists.length === 0) {
+      if (!googlePlaylists.length) {
         this.toast.show('No YouTube playlists loaded.', ErrorSeverity.WARNING, 3000);
         return;
       }
 
-      const youtubePlaylistsMap = new Map(googlePlaylists.map(p => [p.title.toLowerCase(), p]));
+      const youtubePlaylistsMap = new Map(googlePlaylists.map((p) => [p.title.toLowerCase(), p]));
+
+      await this._transferSongsForPlaylist(spotifyPlaylist, youtubePlaylistsMap);
+
+      this.toast.show(`Finished transferring songs for "${spotifyPlaylist.title}"!`, ErrorSeverity.INFO, 5000);
+    } catch (error) {
+      const appErr = this.errorHandler.handleError(error, `transferSinglePlaylistSongs:${spotifyPlaylist.title}`);
+      this.toast.show(appErr.message, appErr.severity);
+    } finally {
+      this.connecting.set(false);
+    }
+  }
+
+  /**
+   * Private helper to handle the logic of transferring songs for a single playlist.
+   * @param spotifyPlaylist The source Spotify playlist.
+   * @param youtubePlaylistsMap A map of lowercase YouTube playlist titles to playlist objects.
+   */
+  private async _transferSongsForPlaylist(
+    spotifyPlaylist: PlaylistColumn,
+    youtubePlaylistsMap: Map<string, PlaylistColumn>,
+  ) {
+    try {
+
       const targetPlaylist = youtubePlaylistsMap.get(spotifyPlaylist.title.toLowerCase());
 
       if (!targetPlaylist) {
@@ -694,30 +690,31 @@ export class TransferComponent implements OnInit {
         return;
       }
 
-      // Ensure spotify tracks are loaded for this playlist
-      if (!spotifyPlaylist.videos || spotifyPlaylist.videos.length === 0) {
-        await this.loadVideosForPlaylist(spotifyPlaylist.id);
-        // need to get the updated playlist from the signal
-        const updatedSpotifyPlaylist = this.spotifyPlaylists().find(p => p.id === spotifyPlaylist.id);
-        if (!updatedSpotifyPlaylist || !updatedSpotifyPlaylist.videos || updatedSpotifyPlaylist.videos.length === 0) {
-          this.toast.show(`Could not load songs for "${spotifyPlaylist.title}".`, ErrorSeverity.ERROR, 3000);
+      // Ensure spotify tracks are loaded for this playlist if they aren't already
+      let playlistToProcess = spotifyPlaylist;
+      if (!playlistToProcess.videos || playlistToProcess.videos.length === 0) {
+        await this.loadVideosForPlaylist(playlistToProcess.id);
+        const updatedPlaylist = this.spotifyPlaylists().find((p) => p.id === playlistToProcess.id);
+        if (!updatedPlaylist?.videos?.length) {
+          this.toast.show(`Could not load songs for "${playlistToProcess.title}".`, ErrorSeverity.ERROR, 3000);
           return;
         }
-        spotifyPlaylist = updatedSpotifyPlaylist;
+        playlistToProcess = updatedPlaylist;
       }
 
-
-      this.toast.show(`Transferring songs to "${targetPlaylist.title}"...`, ErrorSeverity.INFO, 5000);
+      this.toast.show(`Processing songs for "${targetPlaylist.title}"...`, ErrorSeverity.INFO, 5000);
 
       const [youtubePlaylistWithVideos] = await this.playlistSvc.fetchAllPlaylistItems([targetPlaylist]);
-      const existingVideoTitles = new Set(youtubePlaylistWithVideos.videos.map(v => v.title.toLowerCase()));
+      const existingVideoTitles = new Set(youtubePlaylistWithVideos.videos.map((v) => v.title.toLowerCase()));
 
-      for (const spotifyTrack of spotifyPlaylist.videos) {
+      for (const spotifyTrack of playlistToProcess.videos) {
         const searchQuery = spotifyTrack.title;
 
+        // Basic fuzzy check to see if a song with a similar title already exists
+        const songTitle = searchQuery.split('-')[0].trim().toLowerCase();
         let exists = false;
         for (const existingTitle of existingVideoTitles) {
-          if (existingTitle.includes(spotifyTrack.title.split('-')[0].trim().toLowerCase())) {
+          if (existingTitle.includes(songTitle)) {
             exists = true;
             break;
           }
@@ -730,26 +727,23 @@ export class TransferComponent implements OnInit {
 
         try {
           const searchResults = await this.youtube.searchMusicVideos(searchQuery, 1);
-          if (searchResults && searchResults.items && searchResults.items.length > 0) {
+          if (searchResults?.items?.length > 0) {
             const videoId = searchResults.items[0].id.videoId;
             await this.youtube.addVideoToPlaylist(targetPlaylist.id, videoId);
             this.toast.show(`Added "${searchQuery}" to "${targetPlaylist.title}"`, ErrorSeverity.INFO, 2000);
-            existingVideoTitles.add(searchQuery.toLowerCase());
+            existingVideoTitles.add(searchQuery.toLowerCase()); // Avoid re-adding in the same run
           } else {
             this.toast.show(`No YouTube video found for "${searchQuery}"`, ErrorSeverity.WARNING, 2000);
           }
         } catch (error) {
-          console.error(`Failed to search or add video for "${searchQuery}"`, error);
-          this.toast.show(`Error processing "${searchQuery}"`, ErrorSeverity.ERROR, 3000);
+          const appErr = this.errorHandler.handleYouTubeError(error, '_transferSongsForPlaylist.searchAdd');
+          this.toast.show(`Error for "${searchQuery}": ${appErr.message}`, appErr.severity);
         }
       }
-
-      this.toast.show(`Finished transferring songs for "${spotifyPlaylist.title}"!`, ErrorSeverity.INFO, 5000);
     } catch (error) {
-      console.error(`An error occurred during song transfer for "${spotifyPlaylist.title}":`, error);
-      this.toast.show('Song transfer failed.', ErrorSeverity.ERROR, 5000);
-    } finally {
-      this.connecting.set(false);
+      // This top-level catch handles errors in the setup (e.g., fetching playlist items)
+      const appErr = this.errorHandler.handleError(error, '_transferSongsForPlaylist');
+      this.toast.show(appErr.message, appErr.severity);
     }
   }
 
@@ -809,4 +803,115 @@ export class TransferComponent implements OnInit {
       return [...playlists];
     });
   }
+
+  /**
+   * Handles dropping a song into a playlist.
+   * Supports cross-platform (Spotify to YouTube) transfers.
+   */
+  async dropSong(event: CdkDragDrop<VideoCard[]>) {
+    // If dropped in the same list, it's a reorder. We can ignore this for now.
+    if (event.previousContainer === event.container) {
+      // To enable reordering, you would use moveItemInArray here.
+      return;
+    }
+
+    const sourcePlaylistId = event.previousContainer.id;
+    const destPlaylistId = event.container.id;
+    const songToTransfer = event.previousContainer.data[event.previousIndex];
+
+    // Check if this is a Spotify -> YouTube transfer
+    const sourceIsSpotify = this.spotifyPlaylists().some((p) => p.id === sourcePlaylistId);
+    const destIsYouTube = this.googlePlaylists().some((p) => p.id === destPlaylistId);
+
+    if (!sourceIsSpotify || !destIsYouTube) {
+      this.toast.show(
+        'Drag and drop is only supported from Spotify to YouTube playlists.',
+        ErrorSeverity.WARNING,
+        4000,
+      );
+      return;
+    }
+
+    // Prevent dropping if the song is already matched/transferred
+    if (songToTransfer.matched) {
+      this.toast.show(
+        `"${songToTransfer.title}" has already been transferred.`,
+        ErrorSeverity.INFO,
+        3000,
+      );
+      return;
+    }
+
+    this.connecting.set(true);
+    this.toast.show(`Transferring "${songToTransfer.title}"...`, ErrorSeverity.INFO, 60000);
+
+    try {
+      const targetYouTubePlaylist = this.googlePlaylists().find((p) => p.id === destPlaylistId);
+      if (!targetYouTubePlaylist) {
+        throw new Error('Target YouTube playlist not found.');
+      }
+
+      // 1. Search for the song on YouTube
+      const searchQuery = songToTransfer.title;
+      const searchResults = await this.youtube.searchMusicVideos(searchQuery, 1);
+
+      if (!searchResults?.items?.length) {
+        this.toast.show(`No YouTube video found for "${searchQuery}"`, ErrorSeverity.WARNING, 3000);
+        return;
+      }
+
+      const videoId = searchResults.items[0].id.videoId;
+
+      // 2. Add the found video to the YouTube playlist
+      await this.youtube.addVideoToPlaylist(destPlaylistId, videoId);
+
+      // 3. Update the UI: add the new video to the YouTube playlist's video list
+      const newVideo: VideoCard = {
+        id: videoId,
+        title: searchResults.items[0].snippet.title || 'Unknown Title',
+        youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
+        thumbnail: searchResults.items[0].snippet.thumbnails?.default?.url,
+        matched: true,
+        description: ''
+      };
+
+      this.googlePlaylists.update((playlists) => {
+        const playlist = playlists.find((p) => p.id === destPlaylistId);
+        if (playlist) {
+          playlist.videos = [...(playlist.videos || []), newVideo];
+        }
+        return [...playlists];
+      });
+
+      // 4. Mark the source Spotify song as matched
+      this.spotifyPlaylists.update((playlists) => {
+        const playlist = playlists.find((p) => p.id === sourcePlaylistId);
+        const song = playlist?.videos.find((v) => v.id === songToTransfer.id);
+        if (song) {
+          song.matched = true;
+        }
+        return [...playlists];
+      });
+
+      // 5. Persist changes
+      await this.storage.savePlaylists(this.googlePlaylists(), 'google');
+      await this.storage.savePlaylists(this.spotifyPlaylists(), 'spotify');
+
+      this.toast.show(`Added "${searchQuery}" to "${targetYouTubePlaylist.title}"`, ErrorSeverity.INFO, 3000);
+    } catch (error) {
+      const appErr = this.errorHandler.handleYouTubeError(error, 'dropSong');
+      this.toast.show(appErr.message, appErr.severity);
+    } finally {
+      this.connecting.set(false);
+    }
+  }
+
+  /**
+   * Opens the song/video in a new tab from its source.
+   * @param video The video/track card to preview.
+   */
+  previewSong(video: VideoCard): void {
+    this.playerManager.open(video);
+  }
+
 }

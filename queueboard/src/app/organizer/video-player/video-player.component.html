@@ -17,6 +17,13 @@
       </youtube-player>
     </div>
     <div class="player-controls">
+      <button class="btn btn-sm btn-outline-secondary" (click)="togglePlayPause()">
+        @if (playerState() === 1 || playerState() === 3) { <!-- Playing or Buffering -->
+          <span>⏸️</span>
+        } @else {
+          <span>▶️</span>
+        }
+      </button>
       <button class="btn btn-sm btn-outline-secondary" [class.active]="currentPlaybackRate() === 0.75" (click)="setPlaybackRate(0.75)">0.75x</button>
       <button class="btn btn-sm btn-outline-secondary" [class.active]="currentPlaybackRate() === 1" (click)="setPlaybackRate(1)">1x</button>
       <button class="btn btn-sm btn-outline-secondary" [class.active]="currentPlaybackRate() === 1.25" (click)="setPlaybackRate(1.25)">1.25x</button>

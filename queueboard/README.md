@@ -58,7 +58,7 @@ Angular CLI does not come with an end-to-end testing framework by default. You c
 
 For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
 
-## Organizer (new)
+## Organizer
 
 This project now includes a basic Organizer page (Trello-style playlists and videos) under the route `/organizer`.
 
@@ -78,3 +78,15 @@ Quick setup after pulling changes:
 
 3. Start dev server: `npm start`.
 
+## Transfer Page
+
+A feature for transferring playlists and songs between different music services. This is available at the `/transfer` route.
+
+Key features:
+- **Service Integration**: Connect to your Google (for YouTube) and Spotify accounts to load your playlists.
+- **Side-by-Side View**: Your playlists from connected services are displayed in a two-column layout for easy comparison and management.
+- **Playlist Filtering**: Quickly find playlists using the filter inputs.
+- **Track Loading**: Expand any playlist to load and view its list of songs/videos.
+- **Song Transfer**: Transfer songs from a Spotify playlist to a new or existing YouTube playlist.
+
+This feature utilizes `@angular/cdk/drag-drop`

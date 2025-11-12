@@ -11,6 +11,7 @@ Key facts you should know immediately
   - Browser bootstrap: `queueboard/src/main.ts`
   - Server bootstrap (SSR): `queueboard/src/main.server.ts` and `queueboard/src/server.ts` (Express request handler and server)
 - Routes: top-level routes are in `queueboard/src/app/app.routes.ts` and lazy-load the `OrganizerComponent` from `queueboard/src/app/organizer/organizer.component.ts`.
+- New Feature: A `/transfer` route has been added for moving playlists/songs between services like YouTube and Spotify. See `transfer.component.ts`.
 
 Patterns and conventions (code-level)
 
@@ -19,6 +20,7 @@ Patterns and conventions (code-level)
 - YouTube integration: `YoutubeApiService` (in `src/app/services/youtube-api.service.ts`):
   - Expects `environment.googleClientId` and `environment.googleApiKey` set in `queueboard/src/env/environment.ts` (or prod file). Throwing/informative errors are used when credentials are missing; preserve that behavior.
   - Loads remote scripts (`apis.google.com/js/api.js` and `accounts.google.com/gsi/client`) at runtime — do not attempt to import these as synchronous packages.
+- Spotify integration: `SpotifyApiService` (in `src/app/services/spotify-api.service.ts`) handles OAuth 2.0 PKCE flow and API calls for Spotify.
 - Drag & drop: uses CDK DragDrop module rather than complex state libraries; persistence of order is handled by `saveState()` writing to `localStorage`.
 
 Builds / dev workflow (practical commands)
@@ -48,7 +50,8 @@ Files to reference when editing or diagnosing
 - Routing and lazy-loading: `queueboard/src/app/app.routes.ts`
 - App config / providers: `queueboard/src/app/app.config.ts` and `queueboard/src/app/app.config.server.ts`
 - Organizer UI and main app logic: `queueboard/src/app/organizer/organizer.component.ts`, `organizer.component.html`, `organizer.component.scss`
-- YouTube integration: `queueboard/src/app/services/youtube-api.service.ts` and `queueboard/src/env/environment.ts`
+- Transfer UI and logic: `queueboard/src/app/transfer/transfer.component.ts`, `transfer.component.html`
+- Service integrations: `queueboard/src/app/services/youtube-api.service.ts`, `queueboard/src/app/services/spotify-api.service.ts`, and `queueboard/src/env/environment.ts`
 - Dev server and SSR entry points: `queueboard/src/main.ts`, `queueboard/src/main.server.ts`, `queueboard/src/server.ts`
 - Angular CLI config: `queueboard/angular.json` and `queueboard/package.json`
 - Testing config: `queueboard/jest.config.js`, `queueboard/setup-jest.ts`, `queueboard/babel.config.js` - Jest with TypeScript support

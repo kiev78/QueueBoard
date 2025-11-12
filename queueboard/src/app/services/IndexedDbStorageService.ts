@@ -75,12 +75,7 @@ export class IndexedDbStorageService implements IStorage {
 
       for (const playlist of playlists) {
         const videos = await this.indexedDb.getVideosByPlaylist(playlist.id, service);
-        playlist.videos = videos.map((video: any) => {
-          if (video.thumbnailBlob) {
-            video.thumbnailUrl = URL.createObjectURL(video.thumbnailBlob);
-          }
-          return video;
-        });
+        playlist.videos = videos;
       }
 
       return playlists;
@@ -106,15 +101,6 @@ export class IndexedDbStorageService implements IStorage {
       if (videos) {
         for (const video of videos) {
           const videoWithPlaylistId = { ...video, playlistId: playlist.id } as any;
-          if (video.thumbnail && !video.thumbnailBlob) {
-            try {
-              const response = await fetch(video.thumbnail);
-              const blob = await response.blob();
-              videoWithPlaylistId.thumbnailBlob = blob;
-            } catch (error) {
-              console.error(`Failed to fetch thumbnail for video ${video.id}:`, error);
-            }
-          }
           try {
             await this.indexedDb.put(videoStore, videoWithPlaylistId);
           } catch (e) {

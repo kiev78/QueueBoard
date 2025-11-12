@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, signal } from '@angular/core';
+import { Component, Input, Output, EventEmitter, signal, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { YouTubePlayerModule } from '@angular/youtube-player';
 import { VideoCard } from '../../services/playlist.service';
@@ -19,7 +19,32 @@ export class VideoPlayerComponent {
   @Output() stateChange = new EventEmitter<YT.PlayerEvent>();
 
   currentPlaybackRate = signal(1);
+  playerState = signal<YT.PlayerState | null>(null);
   private playerInstance?: YT.Player;
+
+  @HostListener('window:keydown.space', ['$event'])
+  onSpacebarPress(event: Event) {
+    event.preventDefault(); // Prevent scrolling
+    this.togglePlayPause();
+  }
+
+  @HostListener('window:keydown.arrowleft', ['$event'])
+  onArrowLeftPress(event: Event) {
+    event.preventDefault();
+    this.seekVideo(-15); // Seek backward 15 seconds
+  }
+
+  @HostListener('window:keydown.arrowright', ['$event'])
+  onArrowRightPress(event: Event) {
+    event.preventDefault();
+    this.seekVideo(15); // Seek forward 15 seconds
+  }
+
+  @HostListener('window:keydown.escape', ['$event'])
+  onEscapePress(event: Event) {
+    event.preventDefault();
+    this.closePlayer.emit();
+  }
 
   onPlayerReady(event: YT.PlayerEvent) {
     this.playerInstance = event.target;
@@ -27,7 +52,25 @@ export class VideoPlayerComponent {
   }
 
   onStateChange(event: YT.PlayerEvent) {
+    this.playerState.set(event.data);
     this.stateChange.emit(event);
+  }
+
+  togglePlayPause() {
+    if (!this.playerInstance) return;
+
+    const state = this.playerInstance.getPlayerState();
+    if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
+      this.playerInstance.pauseVideo();
+    } else {
+      this.playerInstance.playVideo();
+    }
+  }
+
+  seekVideo(seconds: number) {
+    if (!this.playerInstance) return;
+    const currentTime = this.playerInstance.getCurrentTime();
+    this.playerInstance.seekTo(currentTime + seconds, true);
   }
 
   setPlaybackRate(speed: number) {
