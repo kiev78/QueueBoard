@@ -279,6 +279,16 @@
                          <div class="video-duration">{{ v.duration }}</div>
                          }
                          </div>
+                         @if (!v.matched) {
+                         <button
+                           class="btn btn-sm btn-outline-primary ms-auto"
+                           (click)="transferSong(v, playlist)"
+                           title="Transfer"
+                           [disabled]="connecting()"
+                         >
+                           &lt;-
+                         </button>
+                         }
                         </div>
                       </li>
                     </ol>

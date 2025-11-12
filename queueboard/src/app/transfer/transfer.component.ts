@@ -906,6 +906,112 @@ export class TransferComponent implements OnInit {
     }
   }
 
+  async transferSong(songToTransfer: VideoCard, sourcePlaylist: PlaylistColumn) {
+    // Prevent transferring if the song is already matched
+    if (songToTransfer.matched) {
+      this.toast.show(
+        `"${songToTransfer.title}" has already been transferred.`,
+        ErrorSeverity.INFO,
+        3000,
+      );
+      return;
+    }
+
+    this.connecting.set(true);
+    this.toast.show(`Transferring "${songToTransfer.title}"...`, ErrorSeverity.INFO, 60000);
+
+    try {
+      // 1. Find or create the destination YouTube playlist
+      let targetYouTubePlaylist = this.googlePlaylists().find(
+        (p) => p.title.toLowerCase() === sourcePlaylist.title.toLowerCase()
+      );
+
+      if (!targetYouTubePlaylist) {
+        this.toast.show(`Creating YouTube playlist "${sourcePlaylist.title}"...`, ErrorSeverity.INFO, 5000);
+        const newPlaylist = await this.youtube.createPlaylist(sourcePlaylist.title, sourcePlaylist.description || '');
+
+        const newPlaylistColumn: PlaylistColumn = {
+          id: newPlaylist.id,
+          title: newPlaylist.snippet?.title || '',
+          description: newPlaylist.snippet?.description || '',
+          color: '#e0e0e0',
+          videos: [],
+          publishedAt: newPlaylist.snippet?.publishedAt ? new Date(newPlaylist.snippet.publishedAt).getTime() : 0,
+          lastUpdated: Date.now(),
+        };
+
+        this.googlePlaylists.update(playlists => [...playlists, newPlaylistColumn]);
+        await this.storage.savePlaylists(this.googlePlaylists(), 'google');
+        targetYouTubePlaylist = newPlaylistColumn;
+      }
+
+      if (!targetYouTubePlaylist) {
+        throw new Error('Could not find or create the target YouTube playlist.');
+      }
+
+      const destPlaylistId = targetYouTubePlaylist.id;
+
+      // 2. Search for the song on YouTube
+      const searchQuery = songToTransfer.title;
+      const searchResults = await this.youtube.searchMusicVideos(searchQuery, 1);
+
+      if (!searchResults?.items?.length) {
+        this.toast.show(`No YouTube video found for "${searchQuery}"`, ErrorSeverity.WARNING, 3000);
+        this.connecting.set(false); // Make sure to stop spinner on early exit
+        return;
+      }
+
+      const videoId = searchResults.items[0].id.videoId;
+      const videoTitle = searchResults.items[0].snippet.title || 'Unknown Title';
+
+      // 3. Add the found video to the YouTube playlist
+      await this.youtube.addVideoToPlaylist(destPlaylistId, videoId);
+
+      // 4. Update the UI: add the new video to the YouTube playlist's video list
+      const newVideo: VideoCard = {
+        id: videoId,
+        title: videoTitle,
+        youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
+        thumbnail: searchResults.items[0].snippet.thumbnails?.default?.url,
+        matched: true,
+        description: ''
+      };
+
+      this.googlePlaylists.update((playlists) => {
+        const playlist = playlists.find((p) => p.id === destPlaylistId);
+        if (playlist) {
+          // Ensure videos array exists
+          if (!playlist.videos) {
+            playlist.videos = [];
+          }
+          playlist.videos.push(newVideo);
+        }
+        return [...playlists];
+      });
+
+      // 5. Mark the source Spotify song as matched
+      this.spotifyPlaylists.update((playlists) => {
+        const playlist = playlists.find((p) => p.id === sourcePlaylist.id);
+        const song = playlist?.videos.find((v) => v.id === songToTransfer.id);
+        if (song) {
+          song.matched = true;
+        }
+        return [...playlists];
+      });
+
+      // 6. Persist changes
+      await this.storage.savePlaylists(this.googlePlaylists(), 'google');
+      await this.storage.savePlaylists(this.spotifyPlaylists(), 'spotify');
+
+      this.toast.show(`Added "${searchQuery}" to "${targetYouTubePlaylist.title}"`, ErrorSeverity.INFO, 3000);
+    } catch (error) {
+      const appErr = this.errorHandler.handleYouTubeError(error, 'transferSong');
+      this.toast.show(appErr.message, appErr.severity);
+    } finally {
+      this.connecting.set(false);
+    }
+  }
+
   /**
    * Opens the song/video in a new tab from its source.
    * @param video The video/track card to preview.
