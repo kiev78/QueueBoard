@@ -46,6 +46,42 @@ export class VideoPlayerComponent {
     this.closePlayer.emit();
   }
 
+  @HostListener('window:keydown.m', ['$event'])
+  onMPress(event: Event) {
+    event.preventDefault();
+    this.minimizePlayer.emit();
+  }
+
+  @HostListener('window:keydown.1', ['$event'])
+  on1Press(event: Event) {
+    event.preventDefault();
+    this.setPlaybackRate(0.75);
+  }
+
+  @HostListener('window:keydown.2', ['$event'])
+  on2Press(event: Event) {
+    event.preventDefault();
+    this.setPlaybackRate(1);
+  }
+
+  @HostListener('window:keydown.3', ['$event'])
+  on3Press(event: Event) {
+    event.preventDefault();
+    this.setPlaybackRate(1.25);
+  }
+
+  @HostListener('window:keydown.4', ['$event'])
+  on4Press(event: Event) {
+    event.preventDefault();
+    this.setPlaybackRate(1.5);
+  }
+
+  @HostListener('window:keydown.5', ['$event'])
+  on5Press(event: Event) {
+    event.preventDefault();
+    this.setPlaybackRate(2);
+  }
+
   onPlayerReady(event: YT.PlayerEvent) {
     this.playerInstance = event.target;
     this.playerReady.emit(event);
