@@ -3,7 +3,7 @@
     <span class="navbar-brand">Queue Board — Organizer</span>
     <div class="ms-auto d-flex gap-2 align-items-center">
       <!-- Transfer button -->
-      <a routerLink="/transfer" class="btn btn-outline-light">
+      <a routerLink="/transfer" class="btn btn-outline-light" title="Go to Transfers page">
         Transfers
       </a>
       <!-- Dark mode toggle always visible -->
@@ -15,7 +15,7 @@
         @if (isDarkMode()) { <span>🌞</span> } @else { <span>🌙</span> }
       </button>
       @if (!authenticated()) {
-      <button class="btn btn-outline-light" (click)="connectYouTube()" [disabled]="connecting()">
+      <button class="btn btn-outline-light" (click)="connectYouTube()" [disabled]="connecting()" title="Connect to YouTube">
         @if (!connecting()) { <span class="me-1">☁️</span> } @if (connecting()) {
         <span class="me-1">⏳</span> } Connect YouTube
       </button>
@@ -24,10 +24,11 @@
         class="btn btn-secondary"
         (click)="refresh()"
         [disabled]="connecting() || !hasPlaylists()"
+        title="Refresh playlists"
       >
         Refresh
       </button>
-      <button class="btn btn-light text-danger" (click)="signOut()" [disabled]="connecting()">
+      <button class="btn btn-light text-danger" (click)="signOut()" [disabled]="connecting()" title="Sign out from YouTube">
         Sign Out
       </button>
       }
@@ -52,17 +53,18 @@
       [disabled]="!hasPlaylists()"
       (focus)="onSearchFocus()"
       (click)="onSearchFocus()"
+      title="Search (shortcut: /)"
     />
 
     <div class="btn-group" role="group" aria-label="Search filter">
       <input type="radio" class="btn-check" name="searchFilter" id="searchAll" value="all" [(ngModel)]="searchFilter" />
-      <label class="btn btn-outline-primary" for="searchAll">All</label>
+      <label class="btn btn-outline-primary" for="searchAll" title="Search all content">All</label>
 
       <input type="radio" class="btn-check" name="searchFilter" id="searchPlaylists" value="list" [(ngModel)]="searchFilter" />
-      <label class="btn btn-outline-primary" for="searchPlaylists">Playlists</label>
+      <label class="btn btn-outline-primary" for="searchPlaylists" title="Search only playlists">Playlists</label>
 
       <input type="radio" class="btn-check" name="searchFilter" id="searchVideos" value="video" [(ngModel)]="searchFilter" />
-      <label class="btn btn-outline-primary" for="searchVideos">Videos</label>
+      <label class="btn btn-outline-primary" for="searchVideos" title="Search only videos">Videos</label>
     </div>
 
     <div class="sort-and-add" [class.expanded]="showAddPlaylist()">
