@@ -769,7 +769,7 @@ export class TransferComponent implements OnInit {
    */
   private async _searchAndAddSongToYouTube(
     songToTransfer: VideoCard,
-    destPlaylistId: string
+    destPlaylistId: string,
   ): Promise<VideoCard | null> {
     const searchQuery = songToTransfer.title;
     const searchResults = await this.youtube.searchMusicVideos(searchQuery, 1);
@@ -782,15 +782,20 @@ export class TransferComponent implements OnInit {
     const videoId = searchResults.items[0].id.videoId;
     const videoTitle = searchResults.items[0].snippet.title || 'Unknown Title';
 
-    await this.youtube.addVideoToPlaylist(destPlaylistId, videoId);
+    const newPlaylistItem = await this.youtube.addVideoToPlaylist(destPlaylistId, videoId);
+
+    if (!newPlaylistItem || !newPlaylistItem.id) {
+      throw new Error('Failed to get playlist item ID for newly added video.');
+    }
 
     const newVideo: VideoCard = {
       id: videoId,
+      playlistItemId: newPlaylistItem.id,
       title: videoTitle,
       youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
       thumbnail: searchResults.items[0].snippet.thumbnails?.default?.url,
       matched: true,
-      description: ''
+      description: '',
     };
 
     return newVideo;
@@ -858,9 +863,10 @@ export class TransferComponent implements OnInit {
    * Supports cross-platform (Spotify to YouTube) transfers.
    */
   async dropSong(event: CdkDragDrop<VideoCard[]>) {
-    // If dropped in the same list, it's a reorder. We can ignore this for now.
+    // If dropped in the same list, it's a reorder.
     if (event.previousContainer === event.container) {
-      // To enable reordering, you would use moveItemInArray here.
+      // moveItemInArray(event.container.data, event.previousIndex, event.currentIndex);
+      // Reordering via API is not implemented for now.
       return;
     }
 
@@ -868,85 +874,106 @@ export class TransferComponent implements OnInit {
     const destPlaylistId = event.container.id;
     const songToTransfer = event.previousContainer.data[event.previousIndex];
 
-    // Check if this is a Spotify -> YouTube transfer
     const sourceIsSpotify = this.spotifyPlaylists().some((p) => p.id === sourcePlaylistId);
-    const destIsYouTube = this.googlePlaylists().some((p) => p.id === destPlaylistId);
-
-    if (!sourceIsSpotify || !destIsYouTube) {
-      this.toast.show(
-        'Drag and drop is only supported from Spotify to YouTube playlists.',
-        ErrorSeverity.WARNING,
-        4000,
-      );
-      return;
-    }
-
-    // Prevent dropping if the song is already matched/transferred
-    if (songToTransfer.matched) {
-      this.toast.show(
-        `"${songToTransfer.title}" has already been transferred.`,
-        ErrorSeverity.INFO,
-        3000,
-      );
-      return;
-    }
+    const destIsSpotify = this.spotifyPlaylists().some((p) => p.id === destPlaylistId);
+    const sourceIsGoogle = this.googlePlaylists().some((p) => p.id === sourcePlaylistId);
+    const destIsGoogle = this.googlePlaylists().some((p) => p.id === destPlaylistId);
 
     this.connecting.set(true);
-    this.toast.show(`Transferring "${songToTransfer.title}"...`, ErrorSeverity.INFO, 60000);
+    this.toast.show(`Transferring "${songToTransfer.title}"...`, ErrorSeverity.INFO, 10000);
 
     try {
-      const targetYouTubePlaylist = this.googlePlaylists().find((p) => p.id === destPlaylistId);
-      if (!targetYouTubePlaylist) {
-        throw new Error('Target YouTube playlist not found.');
-      }
+      if (sourceIsGoogle && destIsGoogle) {
+        // === Google -> Google ===
+        const videoId = songToTransfer.id; // For YouTube, id is videoId
+        const playlistItemId = songToTransfer.playlistItemId;
 
-      // 1. Search for the song on YouTube
-      const searchQuery = songToTransfer.title;
-      const searchResults = await this.youtube.searchMusicVideos(searchQuery, 1);
-
-      if (!searchResults?.items?.length) {
-        this.toast.show(`No YouTube video found for "${searchQuery}"`, ErrorSeverity.WARNING, 3000);
-        return;
-      }
-
-      const videoId = searchResults.items[0].id.videoId;
-
-      // 2. Add the found video to the YouTube playlist
-      await this.youtube.addVideoToPlaylist(destPlaylistId, videoId);
-
-      // 3. Update the UI: add the new video to the YouTube playlist's video list
-      const newVideo: VideoCard = {
-        id: videoId,
-        title: searchResults.items[0].snippet.title || 'Unknown Title',
-        youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
-        thumbnail: searchResults.items[0].snippet.thumbnails?.default?.url,
-        matched: true,
-        description: ''
-      };
-
-      this.googlePlaylists.update((playlists) => {
-        const playlist = playlists.find((p) => p.id === destPlaylistId);
-        if (playlist) {
-          playlist.videos = [...(playlist.videos || []), newVideo];
+        if (!videoId || !playlistItemId) {
+          throw new Error('Missing video or playlist item ID for YouTube transfer.');
         }
-        return [...playlists];
-      });
 
-      // 4. Mark the source Spotify song as matched
-      this.spotifyPlaylists.update((playlists) => {
-        const playlist = playlists.find((p) => p.id === sourcePlaylistId);
-        const song = playlist?.videos.find((v) => v.id === songToTransfer.id);
-        if (song) {
-          song.matched = true;
+        const newPlaylistItem = await this.youtube.addVideoToPlaylist(destPlaylistId, videoId);
+        await this.youtube.removeVideoFromPlaylist(playlistItemId);
+
+        transferArrayItem(
+          event.previousContainer.data,
+          event.container.data,
+          event.previousIndex,
+          event.currentIndex,
+        );
+
+        // Update the moved item with its new playlistItemId
+        const movedItem = event.container.data[event.currentIndex];
+        if (movedItem && newPlaylistItem) {
+          movedItem.playlistItemId = newPlaylistItem.id;
         }
-        return [...playlists];
-      });
 
-      // 5. Persist changes
-      await this.storage.savePlaylists(this.googlePlaylists(), 'google');
-      await this.storage.savePlaylists(this.spotifyPlaylists(), 'spotify');
+        await this.storage.savePlaylists(this.googlePlaylists(), 'google');
+        this.toast.show(`Moved "${songToTransfer.title}" successfully.`, ErrorSeverity.INFO, 3000);
 
-      this.toast.show(`Added "${searchQuery}" to "${targetYouTubePlaylist.title}"`, ErrorSeverity.INFO, 3000);
+      } else if (sourceIsSpotify && destIsSpotify) {
+        // === Spotify -> Spotify ===
+        const trackId = songToTransfer.id; // For Spotify, id is trackId
+        if (!trackId) {
+          throw new Error('Missing track ID for Spotify transfer.');
+        }
+        const trackUri = `spotify:track:${trackId}`;
+
+        await this.spotify.addTrackToPlaylist(destPlaylistId, trackUri);
+        await this.spotify.removeTrackFromPlaylist(sourcePlaylistId, trackUri);
+
+        transferArrayItem(
+          event.previousContainer.data,
+          event.container.data,
+          event.previousIndex,
+          event.currentIndex,
+        );
+
+        await this.storage.savePlaylists(this.spotifyPlaylists(), 'spotify');
+        this.toast.show(`Moved "${songToTransfer.title}" successfully.`, ErrorSeverity.INFO, 3000);
+
+      } else if (sourceIsSpotify && destIsGoogle) {
+        // === Spotify -> YouTube ===
+        if (songToTransfer.matched) {
+          this.toast.show(`"${songToTransfer.title}" has already been transferred.`, ErrorSeverity.INFO, 3000);
+          return;
+        }
+
+        const targetYouTubePlaylist = this.googlePlaylists().find((p) => p.id === destPlaylistId);
+        if (!targetYouTubePlaylist) {
+          throw new Error('Target YouTube playlist not found.');
+        }
+
+        const newVideo = await this._searchAndAddSongToYouTube(songToTransfer, destPlaylistId);
+
+        if (newVideo) {
+          // Update UI state
+          this.googlePlaylists.update((playlists) => {
+            const playlist = playlists.find((p) => p.id === destPlaylistId);
+            if (playlist) {
+              playlist.videos = [...(playlist.videos || []), newVideo];
+            }
+            return [...playlists];
+          });
+
+          this.spotifyPlaylists.update((playlists) => {
+            const playlist = playlists.find((p) => p.id === sourcePlaylistId);
+            const song = playlist?.videos.find((v) => v.id === songToTransfer.id);
+            if (song) {
+              song.matched = true;
+            }
+            return [...playlists];
+          });
+
+          // Persist changes
+          await this.storage.savePlaylists(this.googlePlaylists(), 'google');
+          await this.storage.savePlaylists(this.spotifyPlaylists(), 'spotify');
+
+          this.toast.show(`Added "${songToTransfer.title}" to "${targetYouTubePlaylist.title}"`, ErrorSeverity.INFO, 3000);
+        }
+      } else {
+        this.toast.show('This type of transfer is not supported.', ErrorSeverity.WARNING, 4000);
+      }
     } catch (error) {
       const appErr = this.errorHandler.handleYouTubeError(error, 'dropSong');
       this.toast.show(appErr.message, appErr.severity);

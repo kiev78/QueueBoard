@@ -66,7 +66,8 @@ export class SpotifyApiService {
   private readonly SPOTIFY_AUTH_URL = 'https://accounts.spotify.com/authorize';
   private readonly SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
   private readonly SPOTIFY_API_BASE = 'https://api.spotify.com/v1';
-  private readonly SCOPES = 'playlist-read-private playlist-read-collaborative';
+  private readonly SCOPES =
+    'playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private';
   private readonly TOKEN_KEY = 'queueboard_spotify_token';
   private readonly REFRESH_KEY = 'queueboard_spotify_refresh';
   private readonly EXPIRY_KEY = 'queueboard_spotify_expiry';
@@ -288,9 +289,29 @@ export class SpotifyApiService {
     localStorage.removeItem(this.EXPIRY_KEY);
   }
 
+  async addTrackToPlaylist(playlistId: string, trackUri: string): Promise<any> {
+    const endpoint = `/playlists/${playlistId}/tracks`;
+    const body = {
+      uris: [trackUri],
+    };
+    return this.makeAuthenticatedRequest(endpoint, 'POST', body);
+  }
+
+  async removeTrackFromPlaylist(playlistId: string, trackUri: string): Promise<any> {
+    const endpoint = `/playlists/${playlistId}/tracks`;
+    const body = {
+      tracks: [{ uri: trackUri }],
+    };
+    return this.makeAuthenticatedRequest(endpoint, 'DELETE', body);
+  }
+
   // Private helper methods
 
-  private async makeAuthenticatedRequest(endpoint: string): Promise<any> {
+  private async makeAuthenticatedRequest(
+    endpoint: string,
+    method: 'GET' | 'POST' | 'DELETE' = 'GET',
+    body?: any,
+  ): Promise<any> {
     if (!this.accessToken) {
       throw new Error('No access token available');
     }
@@ -301,33 +322,49 @@ export class SpotifyApiService {
       await this.refreshAccessToken();
     }
 
-    const response = await fetch(`${this.SPOTIFY_API_BASE}${endpoint}`, {
+    const options: RequestInit = {
+      method: method,
       headers: {
         Authorization: `Bearer ${this.accessToken}`,
         'Content-Type': 'application/json',
       },
-    });
+    };
+
+    if (body) {
+      options.body = JSON.stringify(body);
+    }
+
+    let response = await fetch(`${this.SPOTIFY_API_BASE}${endpoint}`, options);
 
     if (!response.ok) {
       if (response.status === 401) {
         // Token expired, try to refresh
         await this.refreshAccessToken();
         // Retry the request with new token
-        const retryResponse = await fetch(`${this.SPOTIFY_API_BASE}${endpoint}`, {
+        const retryOptions: RequestInit = {
+          ...options,
           headers: {
             Authorization: `Bearer ${this.accessToken}`,
             'Content-Type': 'application/json',
           },
-        });
+        };
+        response = await fetch(`${this.SPOTIFY_API_BASE}${endpoint}`, retryOptions);
 
-        if (!retryResponse.ok) {
-          throw new Error(`Spotify API error: ${retryResponse.status}`);
+        if (!response.ok) {
+          const errorBody = await response.text();
+          console.error('Spotify API retry error:', response.status, errorBody);
+          throw new Error(`Spotify API error after retry: ${response.status}`);
         }
-
-        return retryResponse.json();
+      } else {
+        const errorBody = await response.text();
+        console.error('Spotify API error:', response.status, errorBody);
+        throw new Error(`Spotify API error: ${response.status}`);
       }
+    }
 
-      throw new Error(`Spotify API error: ${response.status}`);
+    // Handle responses with no content
+    if (response.status === 204 || response.headers.get('content-length') === '0') {
+      return {};
     }
 
     return response.json();
