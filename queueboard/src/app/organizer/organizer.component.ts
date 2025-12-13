@@ -367,7 +367,20 @@ export class OrganizerComponent implements OnInit, OnDestroy {
             }),
           );
 
-          return { ...pl, videos: mappedVideos };
+          // Find the most recent video to determine when the playlist was last updated
+          let maxPublishedAt = 0;
+          for (const v of mappedVideos) {
+            if (v.publishedAt) {
+              const t = new Date(v.publishedAt).getTime();
+              if (t > maxPublishedAt) maxPublishedAt = t;
+            }
+          }
+
+          // If we found a recent video, update the playlist's lastUpdated timestamp
+          // otherwise keep the existing one (likely playlist creation time or previous value)
+          const lastUpdated = maxPublishedAt > 0 ? maxPublishedAt : pl.lastUpdated;
+
+          return { ...pl, videos: mappedVideos, lastUpdated };
         } catch (e) {
           console.error('Failed to load playlist items for', pl.id, e);
           return pl; // Return the playlist without videos on error

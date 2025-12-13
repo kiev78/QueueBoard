@@ -94,9 +94,21 @@ export class PlaylistService {
           })
         );
 
+        // Find the most recent video to determine when the playlist was last updated
+        let maxPublishedAt = 0;
+        for (const v of mapped) {
+          if (v.publishedAt) {
+            const t = new Date(v.publishedAt).getTime();
+            if (t > maxPublishedAt) maxPublishedAt = t;
+          }
+        }
+
+        // If we found a recent video, update the playlist's lastUpdated timestamp
+        const lastUpdated = maxPublishedAt > 0 ? maxPublishedAt : pl.lastUpdated;
+
         // Update playlist with fetched videos
         // Note: nextPageToken scaffolding kept for future pagination
-        updatedPlaylists.push({ ...pl, videos: mapped }); // , nextPageToken (disabled)
+        updatedPlaylists.push({ ...pl, videos: mapped, lastUpdated }); // , nextPageToken (disabled)
       } catch (e) {
         console.error('Failed to preload playlist items for', pl.id, e);
         updatedPlaylists.push(pl);
