@@ -350,21 +350,32 @@ export class OrganizerComponent implements OnInit, OnDestroy {
         try {
           // Fetch all videos at once - pagination disabled
           const { items } = await this.youtube.fetchPlaylistItems(pl.id, 250);
+
+          // Create a map of existing videos to preserve thumbnails
+          const existingVideosMap = new Map(pl.videos?.map((v) => [v.id, v]) || []);
+
           const mappedVideos: VideoCard[] = (items as YouTubePlaylistItem[]).map(
-            (v: YouTubePlaylistItem) => ({
-              id: v.contentDetails?.videoId!,
-              playlistItemId: v.id,
-              title: v.snippet?.title || '',
-              description: v.snippet?.description || '',
-              duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
-              thumbnail: v.snippet?.thumbnails?.default?.url || '',
-              tags: v.snippet?.tags || [],
-              channelTitle: v.snippet?.channelTitle || '',
-              publishedAt: v.snippet?.publishedAt || '',
-              youtubeUrl: v.contentDetails?.videoId
-                ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}`
-                : '',
-            }),
+            (v: YouTubePlaylistItem) => {
+              const videoId = v.contentDetails?.videoId!;
+              const existing = existingVideosMap.get(videoId);
+
+              return {
+                id: videoId,
+                playlistItemId: v.id,
+                title: v.snippet?.title || '',
+                description: v.snippet?.description || '',
+                duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
+                // Use existing thumbnail/blob if available to save bandwidth
+                thumbnail: existing?.thumbnail || v.snippet?.thumbnails?.default?.url || '',
+                thumbnailBlob: existing?.thumbnailBlob,
+                tags: v.snippet?.tags || [],
+                channelTitle: v.snippet?.channelTitle || '',
+                publishedAt: v.snippet?.publishedAt || '',
+                youtubeUrl: videoId
+                  ? `https://www.youtube.com/watch?v=${videoId}`
+                  : '',
+              };
+            },
           );
 
           // Find the most recent video to determine when the playlist was last updated
