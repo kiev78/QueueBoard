@@ -123,8 +123,10 @@ export class SortService {
         break;
       case PLAYLIST_SORT_ORDER.RECENT:
         sorted.sort((a, b) => {
-          const dateA = new Date(a.publishedAt || 0).getTime();
-          const dateB = new Date(b.publishedAt || 0).getTime();
+          // Use lastUpdated if available (derived from most recent video)
+          // otherwise fallback to playlist publishedAt
+          const dateA = a.lastUpdated || new Date(a.publishedAt || 0).getTime();
+          const dateB = b.lastUpdated || new Date(b.publishedAt || 0).getTime();
           return dateB - dateA; // desc order
         });
         break;

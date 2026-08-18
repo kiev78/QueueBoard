@@ -129,25 +129,42 @@
     cdkDropList
     [cdkDropListData]="filteredPlaylists()"
   >
-    @for (playlist of filteredPlaylists(); track playlist.id) {
+    @for (playlist of filteredPlaylists(); track playlist.id; let i = $index) {
     <div
       class="column"
+      [id]="'playlist-col-' + playlist.id"
       [style.borderTopColor]="playlist.color"
       [class.load-more-column]="playlist.id === 'load-more-sentinel'"
     >
       <!-- Regular Playlist Column -->
       @if (playlist.id !== 'load-more-sentinel') {
       <div class="card playlist-card" cdkDrag>
-        <div class="card-header d-flex justify-content-between align-items-center">
-          <div class="fw-bold">
-            <a
-              [href]="'https://www.youtube.com/playlist?list=' + playlist.id"
-              target="_blank"
-              rel="noopener"
-              [title]="'Open playlist ' + playlist.title + ' on YouTube'"
-            >{{ playlist.title }}</a>
+        <div class="card-header d-flex justify-content-between align-items-center gap-2">
+          <div class="playlist-header-left d-flex align-items-center gap-2 min-w-0 flex-grow-1">
+            <input
+              type="number"
+              class="form-control form-control-sm playlist-rank-input"
+              [value]="getPlaylistRank(playlist.id)"
+              min="1"
+              [max]="sortedFullPlaylists().length"
+              (change)="onRankInputChange(playlist, $event)"
+              (keydown.enter)="onRankInputEnter(playlist, $event)"
+              (mousedown)="$event.stopPropagation()"
+              (pointerdown)="$event.stopPropagation()"
+              (click)="$event.stopPropagation()"
+              title="Jump to rank position in full playlist list (Press Enter)"
+              aria-label="Playlist rank"
+            />
+            <div class="fw-bold text-truncate playlist-title-wrapper">
+              <a
+                [href]="'https://www.youtube.com/playlist?list=' + playlist.id"
+                target="_blank"
+                rel="noopener"
+                [title]="'Open playlist ' + playlist.title + ' on YouTube'"
+              >{{ playlist.title }}</a>
+            </div>
           </div>
-          <span class="text-muted small">{{ playlist.videos.length }} videos</span>
+          <span class="text-muted small text-nowrap ms-2">{{ playlist.videos.length }} videos</span>
         </div>
         <div class="card-body">
           <div

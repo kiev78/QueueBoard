@@ -76,27 +76,49 @@ export class PlaylistService {
         // TODO: Re-enable pagination by reducing limit and using nextPageToken
         const { items } = await this.youtube.fetchPlaylistItems(pl.id, limit);
 
+        // Create a map of existing videos to preserve thumbnails
+        const existingVideosMap = new Map(pl.videos?.map(v => [v.id, v]) || []);
+
         // Map YouTube API response to VideoCard format
         const mapped: VideoCard[] = (items as YouTubePlaylistItem[]).map(
-          (v: YouTubePlaylistItem) => ({
-            id: v.contentDetails?.videoId!,
-            playlistItemId: v.id,
-            title: v.snippet?.title || '',
-            description: v.snippet?.description || '',
-            duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
-            thumbnail: v.snippet?.thumbnails?.default?.url || '',
-            tags: v.snippet?.tags || [],
-            channelTitle: v.snippet?.channelTitle || '',
-            publishedAt: v.snippet?.publishedAt || '',
-            youtubeUrl: v.contentDetails?.videoId
-              ? `https://www.youtube.com/watch?v=${v.contentDetails.videoId}`
-              : '',
-          })
+          (v: YouTubePlaylistItem) => {
+            const videoId = v.contentDetails?.videoId!;
+            const existing = existingVideosMap.get(videoId);
+
+            return {
+              id: videoId,
+              playlistItemId: v.id,
+              title: v.snippet?.title || '',
+              description: v.snippet?.description || '',
+              duration: this.youtube.isoDurationToString(v.contentDetails?.duration || ''),
+              // Use existing thumbnail/blob if available to save bandwidth
+              thumbnail: existing?.thumbnail || v.snippet?.thumbnails?.default?.url || '',
+              thumbnailBlob: existing?.thumbnailBlob,
+              tags: v.snippet?.tags || [],
+              channelTitle: v.snippet?.channelTitle || '',
+              publishedAt: v.snippet?.publishedAt || '',
+              youtubeUrl: videoId
+                ? `https://www.youtube.com/watch?v=${videoId}`
+                : '',
+            };
+          }
         );
+
+        // Find the most recent video to determine when the playlist was last updated
+        let maxPublishedAt = 0;
+        for (const v of mapped) {
+          if (v.publishedAt) {
+            const t = new Date(v.publishedAt).getTime();
+            if (t > maxPublishedAt) maxPublishedAt = t;
+          }
+        }
+
+        // If we found a recent video, update the playlist's lastUpdated timestamp
+        const lastUpdated = maxPublishedAt > 0 ? maxPublishedAt : pl.lastUpdated;
 
         // Update playlist with fetched videos
         // Note: nextPageToken scaffolding kept for future pagination
-        updatedPlaylists.push({ ...pl, videos: mapped }); // , nextPageToken (disabled)
+        updatedPlaylists.push({ ...pl, videos: mapped, lastUpdated }); // , nextPageToken (disabled)
       } catch (e) {
         console.error('Failed to preload playlist items for', pl.id, e);
         updatedPlaylists.push(pl);
