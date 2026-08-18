@@ -83,64 +83,70 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   private preloadedAllVideos = false;
   preloading = signal(false);
   searchFilter = signal<'all' | 'list' | 'video'>('all');
+  sortedFullPlaylists = computed(() => {
+    const all = this.playlists().filter((p) => p.id !== 'load-more-sentinel' && p.id !== 'loading');
+    if (this.currentSortOrder() === PLAYLIST_SORT_ORDER.CUSTOM) {
+      return this.sortService.applyCustomSort(all);
+    } else {
+      return this.sortService.sortPlaylists(all, this.currentSortOrder());
+    }
+  });
+
+  playlistRankMap = computed(() => {
+    const map = new Map<string, number>();
+    const full = this.sortedFullPlaylists();
+    for (let i = 0; i < full.length; i++) {
+      map.set(full[i].id, i + 1);
+    }
+    return map;
+  });
+
+  getPlaylistRank(playlistId: string): number {
+    return this.playlistRankMap().get(playlistId) || 1;
+  }
+
   filteredPlaylists = computed(() => {
     const q = (this.search || '').trim().toLowerCase();
     const filter = this.searchFilter();
-    let filtered = this.playlists();
+    const sorted = this.sortedFullPlaylists();
 
-    if (q) {
-      const matchText = (text?: string) => (text || '').toLowerCase().includes(q);
-
-      filtered = this.playlists()
-        .map((pl) => {
-          const playlistTitleMatches = matchText(pl.title) || matchText(pl.description);
-
-          const matchingVideos = (pl.videos || []).filter(
-            (v) =>
-              matchText(v.title) ||
-              matchText(v.description) ||
-              (v.tags && v.tags.some((t) => matchText(t))) ||
-              matchText(v.channelTitle),
-          );
-
-          if (filter === 'list') {
-            return playlistTitleMatches ? pl : null;
-          }
-
-          if (filter === 'video') {
-            return matchingVideos.length > 0 ? { ...pl, videos: matchingVideos } : null;
-          }
-
-          // filter === 'all'
-          if (playlistTitleMatches) {
-            return pl;
-          }
-          if (matchingVideos.length > 0) {
-            return { ...pl, videos: matchingVideos };
-          }
-
-          return null;
-        })
-        .filter((x): x is PlaylistColumn => x !== null);
+    if (!q) {
+      return sorted;
     }
 
-    // Apply sorting using SortService. For custom order, first apply stored custom order.
-    let sorted: PlaylistColumn[];
-    if (this.currentSortOrder() === PLAYLIST_SORT_ORDER.CUSTOM) {
-      // Ensure playlists appear in persisted custom order even after fetch/refresh
-      sorted = this.sortService.applyCustomSort(filtered);
-    } else {
-      sorted = this.sortService.sortPlaylists(filtered, this.currentSortOrder());
-    }
+    const matchText = (text?: string) => (text || '').toLowerCase().includes(q);
 
-    // Pagination UI removed - "Load More" sentinel disabled
-    // TODO: Re-enable by uncommenting the following block when pagination is restored:
-    /*
-    if (this.playlistService.nextPageToken) {
-      return [...sorted, { id: 'load-more-sentinel', title: 'Next', videos: [] }];
-    }
-    */
-    return sorted;
+    return sorted
+      .map((pl) => {
+        const playlistTitleMatches = matchText(pl.title) || matchText(pl.description);
+
+        const matchingVideos = (pl.videos || []).filter(
+          (v) =>
+            matchText(v.title) ||
+            matchText(v.description) ||
+            (v.tags && v.tags.some((t) => matchText(t))) ||
+            matchText(v.channelTitle),
+        );
+
+        if (filter === 'list') {
+          return playlistTitleMatches ? pl : null;
+        }
+
+        if (filter === 'video') {
+          return matchingVideos.length > 0 ? { ...pl, videos: matchingVideos } : null;
+        }
+
+        // filter === 'all'
+        if (playlistTitleMatches) {
+          return pl;
+        }
+        if (matchingVideos.length > 0) {
+          return { ...pl, videos: matchingVideos };
+        }
+
+        return null;
+      })
+      .filter((x): x is PlaylistColumn => x !== null);
   });
   hasPlaylists = computed(
     () => this.playlists().length > 0 && this.playlists()[0]?.id !== 'loading',
@@ -567,43 +573,91 @@ export class OrganizerComponent implements OnInit, OnDestroy {
   }
 
   dropPlaylist(event: CdkDragDrop<PlaylistColumn[]>) {
-    const searchActive = (this.search || '').trim().length > 0;
-    const mode = this.currentSortOrder();
-    const raw = [...this.playlists()];
-    const visible = [...this.filteredPlaylists()];
+    if (event.previousIndex === event.currentIndex) return;
 
-    if (!searchActive) {
-      let working = mode === PLAYLIST_SORT_ORDER.CUSTOM ? raw : visible;
-      moveItemInArray(working, event.previousIndex, event.currentIndex);
-      const cleaned = working.filter((p) => p.id !== 'load-more-sentinel' && p.id !== 'loading');
-      this.sortService.saveCustomSortOrder(cleaned.map((p) => p.id));
-      this.playlists.set(working);
-      if (mode !== PLAYLIST_SORT_ORDER.CUSTOM) {
-        this.currentSortOrder.set(PLAYLIST_SORT_ORDER.CUSTOM);
-        this.sortService.saveSortOrder(PLAYLIST_SORT_ORDER.CUSTOM);
-      }
-      this.storage.savePlaylists(this.playlists());
-      return;
-    }
+    const visible = this.filteredPlaylists();
+    const full = this.sortedFullPlaylists();
 
-    // Search-active partial reorder:
-    // Reorder only the visible subset, then merge back with unaffected playlists.
-    const subset = [...visible];
-    moveItemInArray(subset, event.previousIndex, event.currentIndex);
-    const subsetIds = new Set(subset.map((p) => p.id));
-    const unaffected = raw.filter((p) => !subsetIds.has(p.id));
+    const movedItem = visible[event.previousIndex];
+    const targetItem = visible[event.currentIndex];
+    if (!movedItem || !targetItem) return;
 
-    // Merge strategy: keep reordered subset at top followed by unaffected in original order.
-    // Future enhancement: maintain original relative gap positions.
-    const merged = [...subset, ...unaffected];
-    const cleanedMerged = merged.filter((p) => p.id !== 'load-more-sentinel' && p.id !== 'loading');
-    this.sortService.saveCustomSortOrder(cleanedMerged.map((p) => p.id));
-    this.playlists.set(merged);
-    if (mode !== PLAYLIST_SORT_ORDER.CUSTOM) {
+    const fromIndex = full.findIndex((p) => p.id === movedItem.id);
+    const toIndex = full.findIndex((p) => p.id === targetItem.id);
+
+    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
+
+    const master = [...full];
+    moveItemInArray(master, fromIndex, toIndex);
+
+    const cleaned = master.filter((p) => p.id !== 'load-more-sentinel' && p.id !== 'loading');
+    this.sortService.saveCustomSortOrder(cleaned.map((p) => p.id));
+    this.playlists.set(master);
+
+    if (this.currentSortOrder() !== PLAYLIST_SORT_ORDER.CUSTOM) {
       this.currentSortOrder.set(PLAYLIST_SORT_ORDER.CUSTOM);
       this.sortService.saveSortOrder(PLAYLIST_SORT_ORDER.CUSTOM);
     }
+
     this.storage.savePlaylists(this.playlists());
+    this.scrollToPlaylist(movedItem.id);
+  }
+
+  onRankInputEnter(playlist: PlaylistColumn, event: Event): void {
+    const inputEl = event.target as HTMLInputElement;
+    inputEl.blur();
+  }
+
+  onRankInputChange(playlist: PlaylistColumn, event: Event): void {
+    const inputEl = event.target as HTMLInputElement;
+    const raw = inputEl.value;
+    const parsed = parseInt(raw, 10);
+    const full = this.sortedFullPlaylists();
+    const total = full.length;
+    const currentRank = this.getPlaylistRank(playlist.id);
+
+    if (isNaN(parsed) || total <= 0) {
+      inputEl.value = currentRank.toString();
+      return;
+    }
+
+    const clampedRank = Math.max(1, Math.min(total, parsed));
+    inputEl.value = clampedRank.toString();
+
+    if (clampedRank === currentRank) {
+      this.scrollToPlaylist(playlist.id);
+      return;
+    }
+
+    const fromIndex = full.findIndex((p) => p.id === playlist.id);
+    if (fromIndex === -1) return;
+
+    const toIndex = clampedRank - 1;
+
+    const master = [...full];
+    moveItemInArray(master, fromIndex, toIndex);
+
+    const cleaned = master.filter((p) => p.id !== 'load-more-sentinel' && p.id !== 'loading');
+    this.sortService.saveCustomSortOrder(cleaned.map((p) => p.id));
+    this.playlists.set(master);
+
+    if (this.currentSortOrder() !== PLAYLIST_SORT_ORDER.CUSTOM) {
+      this.currentSortOrder.set(PLAYLIST_SORT_ORDER.CUSTOM);
+      this.sortService.saveSortOrder(PLAYLIST_SORT_ORDER.CUSTOM);
+    }
+
+    this.storage.savePlaylists(this.playlists());
+    this.scrollToPlaylist(playlist.id);
+  }
+
+  scrollToPlaylist(playlistId: string): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    setTimeout(() => {
+      const colEl = document.getElementById(`playlist-col-${playlistId}`);
+      if (colEl) {
+        colEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }
+    }, 50);
   }
 
   trackById(index: number, item: any) {
