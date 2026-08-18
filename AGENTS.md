@@ -1,134 +1,148 @@
 # Agent Instructions for QueueBoard
 
-This document provides comprehensive instructions for AI agents on how to interact with and contribute to the QueueBoard codebase.
+This document provides comprehensive architecture guidelines, conventions, and instructions for AI agents (including Jules, Gemini, and coding assistants) interacting with and contributing to the QueueBoard codebase.
 
-## Project Overview
+---
 
-QueueBoard is a web application built with Angular. It uses TypeScript, SCSS for styling, and Jest for testing.
+## 1. Project Overview & Workspace Structure
 
-## Getting Started
+QueueBoard is an Angular (v21 preview) single-page application with Server-Side Rendering (SSR) support via `@angular/ssr` and Express. It provides a Trello-style Kanban board for organizing YouTube playlists and videos with drag-and-drop, custom/alphabetical/recent sorting, ranking, search filtering, and playlist migration (YouTube <-> Spotify).
 
-1.  **Install Dependencies:**
-    ```bash
-    npm install
-    ```
-2.  **Run the Application (Development):**
-    *   **Client-side only (SPA):** Useful for iterating on UI and component logic.
-    ```bash
-    npm start
-    ```
-    or
-    ```bash
-    npm run start:dev
-    ```
-    This will start a development server at `http://localhost:4200/`.
-    *   **Server-side Rendering (SSR):** To run the full SSR server, you must first build the project.
-        1.  Build: `ng build`
-        2.  Serve SSR: `npm run serve:ssr:queueboard` (expects `dist/queueboard/server/server.mjs`)
+- **Repository Root**: `c:\dev\QueueBoard`
+- **Application Directory**: `queueboard/` — **all npm and Angular CLI commands must be executed within `queueboard/`**
+- **Configuration Files**:
+  - `queueboard/angular.json` — Angular CLI build configuration
+  - `queueboard/tsconfig.app.json`, `queueboard/tsconfig.spec.json`, `queueboard/tsconfig.json`
+  - `queueboard/src/env/environment.ts` — API client configuration (Google Client ID, Google API Key)
+- **Entry Points**:
+  - Browser bootstrap: `queueboard/src/main.ts`
+  - SSR bootstrap: `queueboard/src/main.server.ts` & `queueboard/src/server.ts` (Express handler)
+  - Routes: `queueboard/src/app/app.routes.ts` (`/` -> `OrganizerComponent`, `/transfer` -> `TransferComponent`)
 
-## Core Technologies & Patterns
+---
 
-*   **Framework**: Angular (v21 preview) with standalone components.
-*   **State Management**: Angular Signals are used for reactive state (e.g., `playlists = signal<...>([])`).
-    *   **Signal Updates**: When modifying state, always prefer creating shallow copies of arrays/objects before calling `.set()` on the signal.
-        *   *Example*: `const curr = [...this.playlists()]; curr[idx] = { ...curr[idx], videos: mapped }; this.playlists.set(curr);`
-*   **Server-Side Rendering (SSR) Safety**: Guard any code using browser-specific globals (e.g., `window`, `localStorage`, `sessionStorage`) to prevent errors during SSR.
-    *   *Example*: `if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;`
-*   **API Integrations**:
-    *   **YouTube**: Handled by `YoutubeApiService`. It loads Google's API scripts (`apis.google.com/js/api.js`, `accounts.google.com/gsi/client`) at runtime. Do not attempt static imports. Expects `environment.googleClientId` and `environment.googleApiKey`.
-    *   **Spotify**: Handled by `SpotifyApiService`, which manages the OAuth 2.0 PKCE flow.
-*   **Drag & Drop**: Implemented using the Angular CDK DragDrop module. Persistence of order is typically handled by `saveState()` writing to `localStorage`.
+## 2. Getting Started & Development Commands
 
-## Routing & Features
+> Always run commands from the `queueboard/` subdirectory: `cd queueboard`
 
-*   **Top-level Routes**: Defined in `queueboard/src/app/app.routes.ts`.
-*   **Organizer Page**: Main application logic and UI at `/organizer` (`organizer.component.ts`).
-*   **Transfer Page**: For moving playlists/songs between services at `/transfer` (`transfer.component.ts`).
+1. **Install Dependencies:**
+   ```bash
+   npm install
+   ```
 
-## Important Files & References
+2. **Run Development Server:**
+   - **Client-side only (SPA):**
+     ```bash
+     npm start          # Runs ng serve at http://localhost:4200/
+     # or: npm run start:dev
+     ```
+   - **SSR Server:**
+     ```bash
+     npm run build
+     npm run serve:ssr:queueboard   # Runs node dist/queueboard/server/server.mjs
+     ```
 
-*   **Routing**: `queueboard/src/app/app.routes.ts`
-*   **App Configuration**: `queueboard/src/app/app.config.ts`, `queueboard/src/app/app.config.server.ts`
-*   **Main Components**:
-    *   `queueboard/src/app/organizer/organizer.component.ts`
-    *   `queueboard/src/app/transfer/transfer.component.ts`
-*   **Service Integrations**:
-    *   `queueboard/src/app/services/youtube-api.service.ts`
-    *   `queueboard/src/app/services/spotify-api.service.ts`
-*   **Environment Variables**: `queueboard/src/env/environment.ts`
-*   **SSR Entry Points**: `queueboard/src/main.server.ts`, `queueboard/src/server.ts` (Express handler)
-*   **Angular CLI Config**: `queueboard/angular.json`, `queueboard/package.json`
-*   **Testing Config**: `queueboard/jest.config.js`, `queueboard/setup-jest.ts`
+3. **Building the Project:**
+   ```bash
+   npm run build      # Or: npx.cmd ng build
+   ```
 
-## Coding Style and Conventions
+4. **Testing (Jest):**
+   ```bash
+   npm test               # Run all unit tests
+   npm run test:watch     # Run tests in watch mode
+   npm run test:ci        # CI mode with coverage and memory checks
+   npm run test:coverage  # Generate coverage report
+   ```
 
-This project uses Prettier to enforce a consistent code style. Please adhere to the following conventions:
+---
 
-*   **Line Width:** Maximum 135 characters.
-*   **Quotes:** Use single quotes (`'`) for strings.
-*   **Brackets:** Place brackets on the same line.
-*   **Attributes:** Use a single attribute per line in HTML.
-*   **TypeScript:**
-    *   Strict mode is enabled.
-    *   Use single quotes for strings.
-    *   Follow the rules defined in `tsconfig.json`.
+## 3. Core Technologies & Architectural Patterns
 
-Before committing any changes, format your code using Prettier.
+### 3.1. Standalone Components & Signal Reactivity
+- All components are Angular standalone components using modern control flow (`@if`, `@for`, `@else`).
+- State is managed via Angular signals (`signal()`, `computed()`).
+- **Signal Updates**: Always create shallow copies of arrays/objects before mutating and calling `.set()` or `.update()`:
+  ```typescript
+  const updated = [...this.playlists()];
+  updated[idx] = { ...updated[idx], videos: newVideos };
+  this.playlists.set(updated);
+  ```
 
-## Testing
+### 3.2. Server-Side Rendering (SSR) & Browser Globals Safety
+- Always guard browser-only APIs (`window`, `document`, `localStorage`, `sessionStorage`, `IndexedDB`, DOM queries) with `isPlatformBrowser(this.platformId)` or `typeof window !== 'undefined'` to avoid runtime errors during SSR prerendering.
 
-The project uses Jest for unit testing.
+### 3.3. Multi-Tier Storage Architecture
+- Handled by `StorageService` (`src/app/services/StorageService.ts`), delegating to `IndexedDbStorageService` with fallback to `LocalStorageService`.
+- Use `this.storage.getPlaylists()` and `this.storage.savePlaylists(this.playlists())` for state persistence.
+- Standard storage keys are centralized in `LOCAL_STORAGE_KEYS` (`src/app/services/local-storage-keys.ts`).
 
-*   **Run all tests:**
-    ```bash
-    npm test
-    ```
+---
 
-*   **Run tests in watch mode:**
-    ```bash
-    npm run test:watch
-    ```
+## 4. Key Services & Subsystems
 
-*   **Run tests for CI:**
-    ```bash
-    npm run test:ci
-    ```
+| Service | File | Purpose |
+| :--- | :--- | :--- |
+| `PlaylistService` | `src/app/services/playlist.service.ts` | Fetching, merging, creating playlists and fetching video items from YouTube. |
+| `SortService` | `src/app/services/sort.service.ts` | Playlist sorting (`CUSTOM`, `ALPHABETICAL`, `RECENT` by `lastUpdated`), custom sort order persistence and migration. |
+| `StorageService` | `src/app/services/StorageService.ts` | Main storage facade for saving/loading playlists across IndexedDB and LocalStorage. |
+| `YoutubeApiService` | `src/app/services/youtube-api.service.ts` | Dynamic runtime loading of Google scripts (`apis.google.com/js/api.js`, `accounts.google.com/gsi/client`), token lifecycle, and YouTube Data API calls. |
+| `SpotifyApiService` | `src/app/services/spotify-api.service.ts` | Spotify OAuth 2.0 PKCE auth flow and track/playlist management for `/transfer`. |
+| `PlayerManagerService` | `src/app/services/PlayerManagerService.ts` | YouTube embedded player lifecycle (open, minimize, restore, play/pause). |
+| `ThemeService` | `src/app/services/theme.service.ts` | Light/dark theme toggling (`body.dark-mode`), automatic system preference detection. |
+| `ToastService` | `src/app/services/toast.service.ts` | Non-blocking UI toast notifications. |
+| `ErrorHandlerService` | `src/app/services/ErrorHandlerService.ts` | Error normalization and severity handling for API and network calls. |
 
-*   **Generate test coverage report:**
-    ```bash
-    npm run test:coverage
-    ```
+---
 
-Test files are located alongside the source files and have a `.spec.ts` extension.
+## 5. Board & Playlist Ranking Mechanics
 
-## Building the Project
+### 5.1. True Master List Ranking
+- Ranks displayed on playlist cards always reflect the playlist's 1-based index in the **master unfiltered list**, computed via:
+  - `sortedFullPlaylists`: Computed signal applying active sort order or custom order to all valid playlists.
+  - `playlistRankMap`: Map of `playlistId -> 1-based index` in `sortedFullPlaylists`.
+  - `getPlaylistRank(playlistId)`: Helper for template access.
+  - `filteredPlaylists`: Computed signal filtering `sortedFullPlaylists` against search terms while preserving true master ranks.
 
-To create a production build of the application, run:
+### 5.2. Manual Rank Input & Reordering
+- In each playlist column header (`.playlist-rank-input`):
+  - Users can view and change the playlist's rank directly.
+  - Changing rank reorders `sortedFullPlaylists`, shifts intermediate items (e.g. moving rank 45 to 1 shifts rank 12 to 13), saves custom sort order, sets mode to `CUSTOM`, persists state, and smoothly scrolls to the target column (`scrollToPlaylist`).
+  - Inputs suppress CDK drag propagation using `(mousedown)="$event.stopPropagation()"` and `(pointerdown)="$event.stopPropagation()"`.
 
-```bash
-npm run build
-```
-The build artifacts (browser and server bundles) will be stored in the `dist/` directory.
+### 5.3. Drag & Drop
+- Uses Angular CDK (`cdkDropListGroup`, `cdkDropList`, `cdkDrag`).
+- Column drops (`dropPlaylist`) map visible items to master indices and reorder the full playlist list.
+- Video drops (`drop`) support reordering within the playlist or cross-playlist transfer with YouTube API sync (`syncMove`).
 
-## Submitting Changes
+---
 
-When making changes, please ensure the following:
+## 6. Styling & Theme System
 
-*   **Adherence to Style**: Code must conform to the project's coding style and Prettier rules.
-*   **Testing**: All existing tests must pass. New features or bug fixes should be accompanied by corresponding unit tests.
-*   **Commit Messages**: Use clear and descriptive commit messages.
-*   **Best Practices**: Follow coding best practices and encourage reuse of components/services where appropriate.
+- Color tokens defined in `src/app/organizer/_variables.scss` and `src/styles.scss`:
+  - `--color-primary`, `--color-surface`, `--color-surface-alt`, `--color-background`, `--color-border`, `--color-text`, `--color-text-muted`.
+  - Supports automatic system dark mode (`@media (prefers-color-scheme: dark)`) and manual toggle via `body.dark-mode` / `body:not(.dark-mode)`.
+- Use text truncation (`min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;`) for headers and titles to ensure resilience in responsive column layouts.
 
-### Code Change Guidelines for AI Agents
+---
 
-*   **UI Changes**: Edit standalone components under `queueboard/src/app/*`. Update templates (`*.html`) and styles (`*.scss`) alongside TypeScript component logic.
-*   **State Changes**: Follow the established signal pattern: obtain a shallow copy, mutate the copy, then call `.set(copy)` on the signal.
-*   **Server/SSR Changes**: Be extremely careful with DOM or `window` usage. Always guard client-only code.
-*   **External Secrets / Keys**: Do not hardcode new secrets into `environment.ts` or any other file in PRs. If credentials are required, document the environment variable or suggest a local `environment.local.ts` (and update `.gitignore`).
+## 7. Coding Style & Conventions
 
-### What Not to Change Unless Requested
+- **Prettier Settings**:
+  - **Line Width**: Max 135 characters (default printWidth 100 for standard code).
+  - **Quotes**: Single quotes (`'`) for TypeScript strings.
+  - **Brackets**: Place brackets on the same line.
+  - **HTML Attributes**: Clean attribute formatting (single attribute per line when multiline).
+- **TypeScript**:
+  - Strict mode enabled (`tsconfig.json`).
+  - Strong typing with interfaces/types from `youtube-api.types.ts`, `sort.types.ts`, `playlist.service.ts`.
 
-*   Do not replace the runtime loading of Google scripts with static imports.
-*   Do not commit API keys or client IDs.
+---
 
-If anything is unclear or you need more specific details, ask for permission to inspect additional files or clarify the user's intended deployment target.
+## 8. Guidelines for AI Agents
+
+1. **Keep Edits Minimal and Targeted**: Modify standalone components under `queueboard/src/app/` using precise replacements.
+2. **Preserve External Script Loading**: YouTube API scripts (`apis.google.com/js/api.js`, `accounts.google.com/gsi/client`) are dynamically loaded at runtime in `YoutubeApiService`; do not convert them to static npm imports.
+3. **Never Commit Secrets**: Do not commit real Google/Spotify API keys into `environment.ts` or git.
+4. **Maintain Master List Indexing**: Any playlist reordering or ranking feature must preserve master list rank computation and persistence through `SortService` and `StorageService`.
+5. **Always Verify Builds**: Run `npx.cmd ng build` in `queueboard/` to verify TypeScript, templates, and SCSS compilation before completing tasks.
